@@ -211,6 +211,10 @@ public class BigIntegerValue extends Number implements LeekValue {
 		return new BigIntegerValue(ai, 0);
 	}
 
+	public BigInteger getValue() {
+		return value;
+	}
+
 	public int signum() {
 		return value.signum();
 	}

@@ -118,9 +118,8 @@ public abstract class AI {
 
 		private int id;
 
-		public NativeObjectLeekValue() throws LeekRunException {
+		public NativeObjectLeekValue() {
 			this.id = AI.this.getNextObjectID();
-			AI.this.allocateRAM(this, size() * 2);
 		}
 
 		@Override
@@ -1786,6 +1785,9 @@ public abstract class AI {
 		}
 		if (v instanceof NativeObjectLeekValue o) {
 			return o.toJSON(this, visited);
+		}
+		if (v instanceof BigIntegerValue bi) {
+			return bi.getValue();
 		}
 		return v;
 	}
