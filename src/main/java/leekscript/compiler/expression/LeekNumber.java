@@ -9,7 +9,7 @@ import leekscript.compiler.bloc.MainLeekBlock;
 
 public abstract class LeekNumber extends Expression {
 
-	private final Token token;
+	protected final Token token;
 	private Type type;
 
 	public LeekNumber(Token token, Type type) {

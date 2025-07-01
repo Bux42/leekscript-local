@@ -13,6 +13,7 @@ import leekscript.compiler.WordCompiler;
 import leekscript.compiler.AnalyzeError.AnalyzeErrorLevel;
 import leekscript.compiler.exceptions.LeekCompilerException;
 import leekscript.compiler.expression.LeekExpressionException;
+import leekscript.compiler.expression.LeekType;
 import leekscript.compiler.expression.LeekVariable;
 import leekscript.compiler.expression.LeekVariable.VariableType;
 import leekscript.compiler.instruction.LeekVariableDeclarationInstruction;
@@ -22,7 +23,7 @@ public class AnonymousFunctionBlock extends AbstractLeekBlock {
 	private final ArrayList<String> mParameters = new ArrayList<String>();
 	private final ArrayList<LeekVariableDeclarationInstruction> mParameterDeclarations = new ArrayList<>();
 	private final ArrayList<Boolean> mReferences = new ArrayList<Boolean>();
-	private final ArrayList<Type> mTypes = new ArrayList<>();
+	private final ArrayList<LeekType> mTypes = new ArrayList<>();
 	private int mId = 0;
 	private final Token token;
 	private Token endToken;
@@ -59,7 +60,7 @@ public class AnonymousFunctionBlock extends AbstractLeekBlock {
 		return str + "}";
 	}
 
-	public void addParameter(WordCompiler compiler, Token token, boolean is_reference, Type type) throws LeekCompilerException {
+	public void addParameter(WordCompiler compiler, Token token, boolean is_reference, LeekType leekType) throws LeekCompilerException {
 
 		for (var parameter : mParameters) {
 			if (parameter.equals(token.getWord())) {
@@ -69,9 +70,10 @@ public class AnonymousFunctionBlock extends AbstractLeekBlock {
 
 		mParameters.add(token.getWord());
 		mReferences.add(is_reference);
-		mTypes.add(type);
+		mTypes.add(leekType);
 		var declaration = new LeekVariableDeclarationInstruction(compiler, token, this, type);
 		mParameterDeclarations.add(declaration);
+		var type = leekType == null ? Type.ANY : leekType.getType();
 		addVariable(new LeekVariable(token, VariableType.ARGUMENT, type, declaration));
 		this.type.add_argument(type, false);
 	}
@@ -93,6 +95,9 @@ public class AnonymousFunctionBlock extends AbstractLeekBlock {
 		for (int i = 0; i < mParameters.size(); i++) {
 			if (i != 0)
 				str += ", ";
+			if (mTypes.get(i) != null) {
+				str += mTypes.get(i).toString() + " ";
+			}
 			str += mParameters.get(i);
 		}
 		return str + ") {\n" + super.getCode() + "}\n";

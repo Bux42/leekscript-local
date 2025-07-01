@@ -25,10 +25,7 @@ public class LeekReal extends LeekNumber {
 
 	@Override
 	public String toString() {
-		var formatter = (DecimalFormat) NumberFormat.getNumberInstance(Locale.US);
-		formatter.setMaximumFractionDigits(15);
-		formatter.setGroupingUsed(false);
-		return formatter.format(value);
+		return this.token.getWord();
 	}
 
 	@Override
