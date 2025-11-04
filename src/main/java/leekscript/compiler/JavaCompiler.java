@@ -42,9 +42,8 @@ public class JavaCompiler {
 	private static HashMap<String, AIClassEntry> aiCache = new HashMap<>();
 
 	static {
-		classpath = new File(LeekScript.class.getProtectionDomain().getCodeSource().getLocation().getPath()).getPath();
-		classpath += ":/home/pierre/dev/leek-wars/generator/bin/main";
-		arguments.addAll(Arrays.asList("-classpath", classpath, "-nowarn"));
+		classpath = "build/classes/java/main;leekscript/build/classes/java/main";
+
 		try {
 			urlLoader = new URLClassLoader(new URL[] { new File(IA_PATH).toURI().toURL() }, new ClassLoader() {});
 		} catch (MalformedURLException e) {
