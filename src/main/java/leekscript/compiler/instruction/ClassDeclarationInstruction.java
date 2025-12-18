@@ -649,12 +649,17 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 				writer.addLine("super(" + writer.getAIThis() + ");");
 			}
 		}
-		writer.addLine("increaseRAM(" + (2 * fieldVariables.size()) + ");");
+		writer.addLine("allocateRAM(this, " + (2 * fieldVariables.size()) + ");");
 		for (var field : fields.entrySet()) {
-			if (field.getValue().expression != null) {
+			Expression expr = field.getValue().expression;
+			if (expr != null) {
 				writer.addCode(field.getKey());
 				writer.addCode(" = ");
-				field.getValue().expression.writeJavaCode(mainblock, writer);
+				if (field.getValue().getType() != Type.ANY) {
+					writer.compileConvert(mainblock, 0, expr, field.getValue().getType());
+				} else {
+					expr.writeJavaCode(mainblock, writer);
+				}
 				writer.addLine(";");
 			}
 		}
@@ -937,6 +942,7 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 			switch (token.getWord()) {
 				case "Array": return "ArrayLeekValue";
 				case "Map": return "MapLeekValue";
+				case "BigInteger": return "BigIntegerValue";
 			}
 		}
 		return "u_" + token.getWord();
@@ -1074,7 +1080,7 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 			if (field.getValue().expression != null) {
 				writer.addCode(className);
 				writer.addCode(".initField(\"" + field.getKey() + "\", ");
-				field.getValue().expression.writeJavaCode(mainblock, writer);
+				writer.compileConvert(mainblock, 0, field.getValue().expression, field.getValue().getType());
 				writer.addLine(");");
 			}
 		}
