@@ -21,6 +21,8 @@ import leekscript.compiler.expression.LeekExpression;
 import leekscript.compiler.expression.LeekExpressionException;
 import leekscript.compiler.expression.LeekVariable;
 import leekscript.compiler.expression.LeekVariable.VariableType;
+import leekscript.compiler.vscode.UserClassDefinition;
+import leekscript.compiler.vscode.UserClassFieldDefinition;
 import leekscript.common.AccessLevel;
 import leekscript.common.ClassType;
 import leekscript.common.ClassValueType;
@@ -308,7 +310,89 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 		return false;
 	}
 
-	public void addField(WordCompiler compiler, Token word, Expression expr, AccessLevel level, boolean isFinal, Type type) throws LeekCompilerException {
+	public boolean checkUserClassDefinitions(String debugString, WordCompiler compiler) {
+		if (compiler.userDefinitionsContext != null) {
+			if (!compiler.userDefinitionsContext.definedClassNames.containsKey(this.getName())) {
+				Location loc = this.getLocation();
+				int line = loc.getStartLine();
+				int column = loc.getStartColumn();
+				String fileName = loc.getFile().getName();
+				String folderName = loc.getFile().getFolder().getName();
+
+				String parentClassName = this.parent != null ? this.parent.getName() : null;
+
+				if (compiler.userDefinitionsContext.debug) {
+					System.out
+							.println(
+									"[" + debugString + "] (checkUserClassDefinitions) Registered class "
+											+ this.getName()
+											+ " in user definitions context at "
+											+ line + ":" + column + " in file " + fileName + " in folder "
+											+ folderName
+											+ " parentClassName "
+											+ parentClassName);
+				}
+				UserClassDefinition classDef = new UserClassDefinition(line, column, fileName, folderName,
+						this.getName(),
+						parentClassName);
+				// compiler.userDefinitionsContext.definedClassNames.put(this.getName(),
+				// classDef);
+				// compiler.userDefinitionsContext.result.classes.add(classDef);
+				compiler.userDefinitionsContext.addClass("[checkUserClassDefinitions]",
+						classDef);
+
+				if (compiler.userDefinitionsContext.aiFile == compiler.getAI()) {
+					if (compiler.userDefinitionsContext.debug) {
+						System.out.println(
+								"[" + debugString + "]  (checkUserClassDefinitions) class " + this.getName()
+										+ " is in the same AI file as user cursor");
+					}
+				}
+			}
+			return true;
+		}
+		return false;
+	}
+
+	public void addField(WordCompiler compiler, Token word, Expression expr, AccessLevel level, boolean isFinal,
+			Type type) throws LeekCompilerException {
+
+		boolean getDefinitions = checkUserClassDefinitions("addField", compiler);
+
+		if (word.getLocation() != null) {
+			if (getDefinitions) {
+				var classDef = compiler.userDefinitionsContext.getClassDefinition(this.getName());
+				if (classDef != null) {
+					UserClassFieldDefinition fieldDef = new UserClassFieldDefinition(
+							word.getLocation().getStartLine(),
+							word.getLocation().getStartColumn(),
+							word.getLocation().getFile().getName(),
+							word.getLocation().getFile().getFolder().getName(),
+							word.getWord(),
+							level.toString(),
+							type.toString());
+
+					if (compiler.userDefinitionsContext.debug) {
+						System.out.println(
+								"[addField] Adding field " + fieldDef.toString() + " to class definition "
+										+ this.getName());
+					}
+
+					classDef.addField(fieldDef);
+				} else {
+					if (compiler.userDefinitionsContext.debug) {
+						System.out.println(
+								"[addField] WARNING: Class definition not found for " + this.getName()
+										+ " when adding field " + word.getWord());
+					}
+				}
+			} else if (compiler.userDefinitionsContext != null && compiler.userDefinitionsContext.debug) {
+				System.out.println(
+						"[addField] WARNING: User definitions context is null when adding field " + word.getWord()
+								+ " to class " + this.getName());
+			}
+		}
+
 		addField(compiler, word, type, expr, level, isFinal);
 	}
 
@@ -325,11 +409,50 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 		addStaticField(compiler, word, type, expr, level, isFinal);
 	}
 
-	public void addStaticField(WordCompiler compiler, Token word, Type type, Expression expr, AccessLevel level, boolean isFinal) throws LeekCompilerException {
+	public void addStaticField(WordCompiler compiler, Token word, Type type, Expression expr, AccessLevel level,
+			boolean isFinal) throws LeekCompilerException {
 		if (hasStaticMember(word.getWord())) {
-			compiler.addError(new AnalyzeError(word, AnalyzeErrorLevel.ERROR, Error.FIELD_ALREADY_EXISTS, new String[] { word.getWord() }));
+			compiler.addError(new AnalyzeError(word, AnalyzeErrorLevel.ERROR, Error.FIELD_ALREADY_EXISTS,
+					new String[] { word.getWord() }));
 			return;
 		}
+
+		// boolean getDefinitions = checkUserClassDefinitions("addStaticField",
+		// compiler);
+
+		// if (getDefinitions) {
+
+		// }
+		// find corresponding user class field and set static
+		if (compiler.userDefinitionsContext != null) {
+			var classDef = compiler.userDefinitionsContext.getClassDefinition(this.getName());
+			if (classDef != null) {
+				UserClassFieldDefinition fieldDef = new UserClassFieldDefinition(
+						word.getLocation().getStartLine(),
+						word.getLocation().getStartColumn(),
+						word.getLocation().getFile().getName(),
+						word.getLocation().getFile().getFolder().getName(),
+						word.getWord(),
+						level.toString(),
+						type.toString());
+
+				fieldDef.setStatic("[addStaticField]", compiler.userDefinitionsContext.debug, true);
+				if (compiler.userDefinitionsContext.debug) {
+					System.out.println(
+							"[addField] Adding field " + fieldDef.toString() + " to class definition "
+									+ this.getName());
+				}
+
+				classDef.addField(fieldDef);
+			} else {
+				if (compiler.userDefinitionsContext.debug) {
+					System.out.println(
+							"[addField] WARNING: Class definition not found for " + this.getName()
+									+ " when adding field " + word.getWord());
+				}
+			}
+		}
+
 		staticFields.put(word.getWord(), new ClassDeclarationField(word.getWord(), expr, level, isFinal, type));
 		staticFieldVariables.put(word.getWord(), new LeekVariable(word, VariableType.STATIC_FIELD, type, isFinal));
 	}
@@ -347,12 +470,12 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 			var parentVar = compiler.getCurrentBlock().getVariable(this.parentToken.getWord(), true);
 			if (parentVar == null) {
 				compiler.addError(new AnalyzeError(parentToken, AnalyzeErrorLevel.ERROR, Error.UNKNOWN_VARIABLE_OR_FUNCTION, new String[] {
-					parentToken.getWord()
-				}));
+								parentToken.getWord()
+						}));
 			} else if (parentVar.getVariableType() != VariableType.CLASS) {
 				compiler.addError(new AnalyzeError(parentToken, AnalyzeErrorLevel.ERROR, Error.UNKNOWN_VARIABLE_OR_FUNCTION, new String[] {
-					parentToken.getWord()
-				}));
+								parentToken.getWord()
+						}));
 			} else {
 				var current = parentVar.getClassDeclaration();
 				boolean ok = true;
@@ -423,11 +546,11 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 					var error = cast == CastType.INCOMPATIBLE ? Error.ASSIGNMENT_INCOMPATIBLE_TYPE : Error.DANGEROUS_CONVERSION_VARIABLE;
 
 					compiler.addError(new AnalyzeError(field.getValue().expression.getLocation(), level, error, new String[] {
-						field.getValue().expression.toString(),
-						field.getValue().expression.getType().toString(),
-						field.getValue().name,
-						field.getValue().getType().toString(),
-					}));
+									field.getValue().expression.toString(),
+									field.getValue().expression.getType().toString(),
+									field.getValue().name,
+									field.getValue().getType().toString(),
+							}));
 				}
 			}
 		}
@@ -444,11 +567,11 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 					var error = cast == CastType.INCOMPATIBLE ? Error.ASSIGNMENT_INCOMPATIBLE_TYPE : Error.DANGEROUS_CONVERSION_VARIABLE;
 
 					compiler.addError(new AnalyzeError(field.getValue().expression.getLocation(), level, error, new String[] {
-						field.getValue().expression.toString(),
-						field.getValue().expression.getType().toString(),
-						field.getValue().name,
-						field.getValue().getType().toString(),
-					}));
+									field.getValue().expression.toString(),
+									field.getValue().expression.getType().toString(),
+									field.getValue().name,
+									field.getValue().getType().toString(),
+							}));
 				}
 			}
 		}
@@ -473,9 +596,9 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 						var parentVersion = parentMethod.get(version.getKey());
 						if (parentVersion != null && version.getValue().block.getType().accepts(parentVersion.block.getType()) != CastType.EQUALS) {
 							compiler.addError(new AnalyzeError(version.getValue().block.getLocation(), AnalyzeErrorLevel.ERROR, Error.OVERRIDDEN_METHOD_DIFFERENT_TYPE, new String[] {
-								version.getValue().block.getType().toString(),
-								parentVersion.block.getType().toString()
-							}));
+											version.getValue().block.getType().toString(),
+											parentVersion.block.getType().toString()
+									}));
 							break;
 						}
 					}
@@ -589,14 +712,14 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 			// }
 			// for (int i = classes.size() - 1; i >= 0; --i) {
 			// 	var clazz = classes.get(i);
-				// for (var field : fields.entrySet()) {
+			// for (var field : fields.entrySet()) {
 				// 	if (field.getValue().expression != null) {
 				// 		writer.addCode(field.getKey());
 				// 		writer.addCode(" = ");
 				// 		field.getValue().expression.writeJavaCode(mainblock, writer);
 				// 		writer.addLine(";");
 				// 	}
-				// }
+			// }
 			// }
 
 			// Captures
@@ -858,11 +981,11 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 			// var clazz = classes.get(i);
 			// for (var field : clazz.fields.entrySet()) {
 				// writer.addCode("u_this.addField(" + writer.getAIThis() + ", \"" + field.getKey() + "\", ");
-				// if (field.getValue().expression != null) {
+			// if (field.getValue().expression != null) {
 				// 	field.getValue().expression.writeJavaCode(mainblock, writer);
-				// } else {
+			// } else {
 				// 	writer.addCode("null");
-				// }
+			// }
 				// writer.addLine(", AccessLevel." + field.getValue().level + ", " + field.getValue().isFinal + ");");
 			// }
 		}
@@ -979,10 +1102,10 @@ public class ClassDeclarationInstruction extends LeekInstruction {
 		}
 
 		// for (Entry<String, ClassDeclarationField> field : fields.entrySet()) {
-			// writer.addCode(className);
-			// writer.addCode(".addField(\"" + field.getKey() + "\"");
+		// writer.addCode(className);
+		// writer.addCode(".addField(\"" + field.getKey() + "\"");
 			// writer.addCode(", AccessLevel." + field.getValue().level + ", " + field.getValue().isFinal);
-			// writer.addLine(");");
+		// writer.addLine(");");
 		// }
 	}
 
