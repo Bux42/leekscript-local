@@ -1,4 +1,4 @@
-package leekscript.compiler;
+package leekscript.compiler.vscode;
 
 public class UserArgumentDefinition {
     public String name;

@@ -1,4 +1,4 @@
-package leekscript.compiler;
+package leekscript.compiler.vscode;
 
 public class UserDefinition {
     public int line;

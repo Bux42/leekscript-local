@@ -51,6 +51,12 @@ import leekscript.compiler.instruction.LeekExpressionInstruction;
 import leekscript.compiler.instruction.LeekGlobalDeclarationInstruction;
 import leekscript.compiler.instruction.LeekReturnInstruction;
 import leekscript.compiler.instruction.LeekVariableDeclarationInstruction;
+import leekscript.compiler.vscode.UserArgumentDefinition;
+import leekscript.compiler.vscode.UserClassDefinition;
+import leekscript.compiler.vscode.UserClassMethodDefinition;
+import leekscript.compiler.vscode.UserCodeDefinitionContext;
+import leekscript.compiler.vscode.UserFunctionDefinition;
+import leekscript.compiler.vscode.UserVariableDeclaration;
 
 public class WordCompiler {
 

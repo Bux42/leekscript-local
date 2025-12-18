@@ -1,7 +1,9 @@
-package leekscript.compiler;
+package leekscript.compiler.vscode;
 
 import java.util.HashMap;
 import java.util.Map;
+
+import leekscript.compiler.AIFile;
 
 public class UserCodeDefinitionContext {
     public final int line;

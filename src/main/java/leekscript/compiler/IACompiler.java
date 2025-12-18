@@ -5,6 +5,7 @@ import leekscript.compiler.bloc.MainLeekBlock;
 import leekscript.compiler.exceptions.LeekCompilerException;
 import leekscript.compiler.expression.LeekVariable;
 import leekscript.compiler.expression.LeekVariable.VariableType;
+import leekscript.compiler.vscode.UserCodeDefinitionContext;
 import leekscript.Util;
 import leekscript.common.Error;
 import leekscript.common.Type;

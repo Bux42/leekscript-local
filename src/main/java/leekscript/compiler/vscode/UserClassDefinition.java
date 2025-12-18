@@ -1,4 +1,4 @@
-package leekscript.compiler;
+package leekscript.compiler.vscode;
 
 import java.util.ArrayList;
 import java.util.List;

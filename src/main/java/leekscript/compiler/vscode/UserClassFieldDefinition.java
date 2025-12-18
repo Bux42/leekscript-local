@@ -1,4 +1,4 @@
-package leekscript.compiler;
+package leekscript.compiler.vscode;
 
 public class UserClassFieldDefinition extends UserDefinition {
     public String name;

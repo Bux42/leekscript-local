@@ -1,4 +1,4 @@
-package leekscript.compiler;
+package leekscript.compiler.vscode;
 
 import com.alibaba.fastjson.JSONArray;
 

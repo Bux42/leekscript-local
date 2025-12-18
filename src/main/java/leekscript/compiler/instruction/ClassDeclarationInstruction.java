@@ -21,16 +21,14 @@ import leekscript.compiler.expression.LeekExpression;
 import leekscript.compiler.expression.LeekExpressionException;
 import leekscript.compiler.expression.LeekVariable;
 import leekscript.compiler.expression.LeekVariable.VariableType;
+import leekscript.compiler.vscode.UserClassDefinition;
+import leekscript.compiler.vscode.UserClassFieldDefinition;
 import leekscript.common.AccessLevel;
 import leekscript.common.ClassType;
 import leekscript.common.ClassValueType;
 import leekscript.common.Error;
 import leekscript.common.Type;
 import leekscript.common.Type.CastType;
-
-// vs code definition imports
-import leekscript.compiler.UserClassDefinition;
-import leekscript.compiler.UserClassFieldDefinition;
 
 public class ClassDeclarationInstruction extends LeekInstruction {
 

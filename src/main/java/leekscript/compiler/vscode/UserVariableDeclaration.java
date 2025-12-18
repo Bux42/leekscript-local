@@ -1,4 +1,4 @@
-package leekscript.compiler;
+package leekscript.compiler.vscode;
 
 import leekscript.compiler.bloc.AbstractLeekBlock;
 
