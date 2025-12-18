@@ -1,5 +1,6 @@
 package leekscript.compiler;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 
 import leekscript.ErrorManager;
@@ -63,6 +64,9 @@ public class WordCompiler {
 	private final int version;
 	private final Options options;
 
+	/* User definition variables */
+	public UserCodeDefinitionContext userDefinitionsContext = null;
+
 	public WordCompiler(AIFile ai, int version, Options options) {
 		mAI = ai;
 		this.version = version;
@@ -75,6 +79,10 @@ public class WordCompiler {
 			mAI.setTokenStream(parser.parse(error -> addError(error)));
 		}
 		mTokens = mAI.getTokenStream();
+	}
+
+	public void setUserDefinitionContext(UserCodeDefinitionContext userDefinitionsContext) {
+		this.userDefinitionsContext = userDefinitionsContext;
 	}
 
 	public boolean isInterrupted() {
@@ -213,8 +221,12 @@ public class WordCompiler {
 							}
 
 							var clazz = new ClassDeclarationInstruction(className, mLine, mAI, false, getMainBlock());
+
+							if (userDefinitionsContext != null) {
+								clazz.checkUserClassDefinitions("firstPass", this);
+							}
+
 							mMain.defineClass(clazz);
-							// System.out.println("Define class " + clazz.getName());
 						}
 					}
 				} else {
@@ -244,8 +256,89 @@ public class WordCompiler {
 				mCurentBlock = mCurentBlock.endInstruction();
 				dowhileendBlock(do_block);
 				mTokens.skip();
-			} else mCurentBlock = mCurentBlock.endInstruction();
-			if (!mTokens.hasMoreTokens()) break;
+			} else {
+				if (userDefinitionsContext != null && mCurentBlock.isFull() && mCurentBlock.hasAccolade()) {
+
+					// get latest variable
+					UserVariableDeclaration lastVar = userDefinitionsContext.getLatestDeclaredVariable();
+					if (lastVar != null) {
+						// check forBlock
+						if (lastVar.getParentBlockRef() != null) {
+							AbstractLeekBlock lastVarParentBlockRef = lastVar.getParentBlockRef();
+
+							if (userDefinitionsContext.debug) {
+								System.out.println(
+										"[secondPassGetDefinitions] endInstruction 2 lastVar " + lastVar.name
+												+ " has forBlock, equals: " + (lastVarParentBlockRef == mCurentBlock));
+							}
+
+							if (lastVarParentBlockRef == mCurentBlock) {
+								Location debugLocation = mTokens.get().getLocation();
+
+								int blockEndLine = debugLocation.getStartLine();
+								int blockEndColumn = debugLocation.getStartColumn();
+
+								int blockStartLine = lastVarParentBlockRef.getLocation().getStartLine();
+								int blockStartColumn = lastVarParentBlockRef.getLocation().getStartColumn();
+
+								int userCol = userDefinitionsContext.column - 1;
+								int userLine = userDefinitionsContext.line;
+
+								int lastVarLine = lastVar.line;
+								int lastVarColumn = lastVar.col;
+
+								// TODO: check lastVar line & col
+								// if cursor is before variable, remove it from suggestions
+								// Check block end line/column
+								// if cursor is after block end line/column, remove it from suggestions
+
+								if (userDefinitionsContext.debug) {
+									System.out.println(
+											"[secondPassGetDefinitions] endInstruction 4 user cursor at line "
+													+ userLine
+													+ " column " + userCol + " block ends at line " + blockEndLine
+													+ " column " + blockEndColumn + " block starts at line "
+													+ blockStartLine + " column " + blockStartColumn
+													+ " lastVar at line "
+													+ lastVarLine + " column " + lastVarColumn);
+								}
+
+								// no autocomplete if cursor is before variable declaration line
+								if (userLine <= lastVarLine) {
+									if (userDefinitionsContext.debug) {
+										System.out.println(
+												"[secondPassGetDefinitions] 5 cursor is before variable declaration, out of scope");
+									}
+									lastVar.clearParentBlockRef();
+									userDefinitionsContext.result.variables.remove(lastVar);
+									continue;
+								}
+							}
+						}
+					}
+				}
+
+				if (userDefinitionsContext != null) {
+					if (userDefinitionsContext.debug) {
+						System.out.println(
+								"[secondPassGetDefinitions] 6 mCurentBlock hasAccolade " + mCurentBlock.hasAccolade() +
+										" parent  "
+										+ (mCurentBlock.getParent() != null
+												? mCurentBlock.getParent().getClass().getSimpleName()
+												: "null")
+										+
+										" isFull " + mCurentBlock.isFull());
+					}
+				}
+
+				mCurentBlock = mCurentBlock.endInstruction();
+
+			}
+
+			if (!mTokens.hasMoreTokens()) {
+				System.out.println("[secondPassGetDefinitions] 7 No more tokens");
+				break;
+			}
 
 			// Puis on lit l'instruction
 			compileWord();
@@ -263,6 +356,14 @@ public class WordCompiler {
 				if (mCurentBlock.endInstruction() == mCurentBlock) {
 					throw new LeekCompilerException(mTokens.get(), Error.NO_BLOC_TO_CLOSE);
 				}
+				System.out.println(
+						"[secondPassGetDefinitions] 7 mCurentBlock hasAccolade " + mCurentBlock.hasAccolade() +
+								" parent  "
+								+ (mCurentBlock.getParent() != null
+										? mCurentBlock.getParent().getClass().getSimpleName()
+										: "null")
+								+
+								" isFull " + mCurentBlock.isFull());
 				mCurentBlock = mCurentBlock.endInstruction();
 			}
 		}
@@ -288,11 +389,23 @@ public class WordCompiler {
 		Token word = mTokens.get();
 		if (word.getType() == TokenType.END_INSTRUCTION) {
 			// mCurentBlock.addInstruction(this, new BlankInstruction());
+			if (userDefinitionsContext != null) {
+				if (userDefinitionsContext.debug) {
+					System.out.println("[compileWord] END_INSTRUCTION at "
+							+ word.getLocation().toString());
+				}
+			}
 			mCurentBlock.setFull(true);
 			mTokens.skip();
 			return;
 		} else if (word.getType() == TokenType.ACCOLADE_RIGHT) {
 			// Fermeture de bloc
+			if (userDefinitionsContext != null) {
+				if (userDefinitionsContext.debug) {
+					System.out.println("[compileWord] ACCOLADE_RIGHT at "
+							+ word.getLocation().toString());
+				}
+			}
 			if (!mCurentBlock.hasAccolade() || mCurentBlock.getParent() == null) {
 				// throw new LeekCompilerException(word, Error.NO_BLOC_TO_CLOSE);
 				addError(new AnalyzeError(word, AnalyzeErrorLevel.ERROR, Error.NO_BLOC_TO_CLOSE));
@@ -304,6 +417,54 @@ public class WordCompiler {
 					mTokens.skip();
 					dowhileendBlock(do_block);
 				} else {
+					if (userDefinitionsContext != null) {
+						if (userDefinitionsContext.debug) {
+							System.out.println(
+									"[compileWord] Closing block: " + mCurentBlock.getClass().getSimpleName());
+						}
+						while (userDefinitionsContext.result.variables.size() > 0) {
+							// get latest variable
+							UserVariableDeclaration lastVar = userDefinitionsContext.getLatestDeclaredVariable();
+
+							// check forBlock
+							if (lastVar.getParentBlockRef() != null && lastVar.getParentBlockRef() == mCurentBlock) {
+								Location currentBlockLocation = mTokens.get().getLocation();
+
+								if (userDefinitionsContext.debug) {
+									System.out.println(
+											"[compileWord] Closing matching block: "
+													+ mCurentBlock.getClass().getSimpleName()
+													+ " for variable " + lastVar.name);
+
+									System.out.println(
+											"[compileWord] currentBlockLocation: " + currentBlockLocation);
+								}
+								int userCol = userDefinitionsContext.column - 1;
+								int userLine = userDefinitionsContext.line;
+
+								if (userLine > currentBlockLocation.getEndLine()) {
+									if (userDefinitionsContext.debug) {
+										System.out.println(
+												"[compileWord] Cursor is after block, removing variable "
+														+ lastVar.name + " from suggestions");
+									}
+									userDefinitionsContext.removeVariable("compileWord", lastVar);
+									// userDefinitionsContext.result.variables.remove(lastVar);
+								}
+								lastVar.clearParentBlockRef();
+							} else {
+								if (userDefinitionsContext.debug) {
+									System.out.println(
+											"[compileWord] No matching block for variable: "
+													+ lastVar.name + " breaking loop " + " with parentBlockRef: " +
+													(lastVar.getParentBlockRef() != null
+															? lastVar.getParentBlockRef().getClass().getSimpleName()
+															: "null"));
+								}
+								break;
+							}
+						}
+					}
 					mCurentBlock.checkEndBlock();
 					mCurentBlock = mCurentBlock.getParent();
 				}
@@ -468,6 +629,75 @@ public class WordCompiler {
 		if (mTokens.eat().getType() != TokenType.PAR_RIGHT) throw new LeekCompilerException(mTokens.get(), Error.CLOSING_PARENTHESIS_EXPECTED);
 	}
 
+	public boolean checkAddUserFunctionDefinitions(WordCompiler compiler, Token functionToken, FunctionBlock block) {
+		if (compiler.userDefinitionsContext != null) {
+			if (compiler.userDefinitionsContext.debug) {
+				System.out
+						.println("[checkUserFunctionDefinitions] Checking function " + functionToken.getWord());
+			}
+			if (!compiler.userDefinitionsContext.definedFunctionNames.containsKey(functionToken.getWord())) {
+				if (compiler.userDefinitionsContext.debug) {
+					System.out
+							.println("[checkUserFunctionDefinitions] Registered function " + functionToken.getWord() +
+									" return type: " + block.getType().returnType());
+
+				}
+
+				ArrayList<LeekVariableDeclarationInstruction> funcParams = block.getParameterDeclarations();
+				ArrayList<UserArgumentDefinition> arguments = new ArrayList<UserArgumentDefinition>();
+
+				for (int i = 0; i < funcParams.size(); i++) {
+					LeekVariableDeclarationInstruction paramInst = funcParams.get(i);
+					Location paramLLocation = paramInst.getLocation();
+
+					// add argument to function definition
+					arguments.add(new UserArgumentDefinition(paramInst.getName(), paramInst.getType().name));
+					if (compiler.userDefinitionsContext.debug) {
+						System.out.println(
+								"[+] [checkAdddUserFunctionDefinitions] Adding argument " + paramInst.getName() +
+										" of type " + paramInst.getType().name + " to function "
+										+ functionToken.getWord());
+					}
+
+					// add argument to user variables with parent block ref
+					UserVariableDeclaration varDecl = new UserVariableDeclaration(
+							paramLLocation.getStartLine(),
+							paramLLocation.getStartColumn(),
+							paramLLocation.getFile().getName(),
+							paramLLocation.getFile().getFolder().getName(),
+							paramInst.getName(),
+							paramInst.getType().name);
+					varDecl.setParentBlockRef(block);
+					compiler.userDefinitionsContext.result.variables.add(varDecl);
+				}
+
+				Location loc = block.getLocation();
+				int line = loc.getStartLine();
+				int column = loc.getStartColumn();
+				String fileName = loc.getFile().getName();
+				String folderName = loc.getFile().getFolder().getName();
+
+				UserFunctionDefinition functionDef = new UserFunctionDefinition(line, column,
+						fileName, folderName,
+						functionToken.getWord(), block.getType().returnType().name, arguments);
+
+				compiler.userDefinitionsContext.result.functions.add(functionDef);
+				compiler.userDefinitionsContext.definedFunctionNames.put(functionToken.getWord(), functionDef);
+
+				if (compiler.userDefinitionsContext.debug) {
+					System.out
+							.println("[checkAdddUserFunctionDefinitions] Registered function " + functionToken.getWord()
+									+
+									" in user definitions context at "
+									+ line + ":" + column + " in file " + fileName + " in folder "
+									+ folderName);
+				}
+			}
+			return true;
+		}
+		return false;
+	}
+
 	private void functionBlock(Token functionToken) throws LeekCompilerException {
 		// Déclaration de fonction utilisateur
 		if (!mCurentBlock.equals(mMain)) {
@@ -551,6 +781,8 @@ public class WordCompiler {
 			throw new LeekCompilerException(mTokens.get(), Error.OPENING_CURLY_BRACKET_EXPECTED);
 		}
 		mMain.addFunction(block);
+		checkAddUserFunctionDefinitions(this, funcName, block);
+
 		setCurrentFunction(previousFunction);
 	}
 
@@ -784,6 +1016,26 @@ public class WordCompiler {
 			mCurentBlock.addInstruction(this, block);
 			mCurentBlock = block;
 
+			// do not add for block argument variable if user is in another AI file
+			if (userDefinitionsContext != null && userDefinitionsContext.userCursorInSameFile(this.getAI())) {
+				if (userDefinitionsContext.debug) {
+					System.out.println("[forBlock] Creating foreach block for variable " + varName.getWord());
+				}
+				// int line, int col, String fileName, String folderName, String name, String
+				// type
+				UserVariableDeclaration forParameterVariable = new UserVariableDeclaration(
+						varName.getLocation().getStartLine(),
+						varName.getLocation().getStartColumn(),
+						varName.getLocation().getFile().getName(),
+						varName.getLocation().getFile().getFolder().getName(),
+						varName.getWord(),
+						type == null ? "any" : type.getType().name);
+
+				// userDefinitionsContext.result.variables.add(varDecl);
+				forParameterVariable.setParentBlockRef(block);
+				userDefinitionsContext.addVariable("forBlock", forParameterVariable);
+			}
+
 			// On lit le array (ou liste de valeurs)
 			var array = readExpression();
 			block.setArray(array);
@@ -955,6 +1207,54 @@ public class WordCompiler {
 			// Si oui on récupère la valeur en question
 			variable.setValue(readExpression(true));
 		}
+
+		if (userDefinitionsContext != null) {
+			// only add variables that are declared in the same file
+			if (userDefinitionsContext.debug) {
+				System.out.println("[globalDeclaration] Found user global definition for variable: "
+						+ word.getWord()
+						+ " with type: " + (type != null ? type.getType().name : "any"));
+			}
+			if (mCurentBlock instanceof ForBlock) {
+
+				// check if user cursor is inside the for block
+				ForBlock forBlock = (ForBlock) mCurentBlock;
+				Location loc = forBlock.getLocation();
+				int endBlock = forBlock.getEndBlock();
+				int startLine = loc.getStartLine();
+				int endColumn = loc.getEndColumn();
+				int endLine = loc.getEndLine();
+				int cursorLine = userDefinitionsContext.line;
+
+				if (userDefinitionsContext.debug) {
+					System.out.println(
+							"[globalDeclaration] User global (SKIP FOR NOW): " + word.getWord()
+									+ " is in a scoped bllock "
+									+ " user cursor line: "
+									+ userDefinitionsContext.line + " user cursor column: "
+									+ userDefinitionsContext.column + " scoped bllock startLine: " + startLine
+									+ " endLine: " + endLine + " end column: " + endColumn + " block end: "
+									+ endBlock);
+				}
+
+				if (cursorLine >= startLine && cursorLine <= endLine) {
+					if (userDefinitionsContext.debug) {
+						System.out.println("[globalDeclaration] User global: " + word.getWord()
+								+ " is inside the scoped bllock at line " + cursorLine);
+					}
+					// do not add the variable to user definitions if cursor is inside the for block
+					return;
+				}
+
+			}
+			UserVariableDeclaration userVarDef = new UserVariableDeclaration(word.getLocation().getStartLine(),
+					word.getLocation().getStartColumn(), word.getLocation().getFile().getName(),
+					word.getLocation().getFile().getFolder().getName(),
+					word.getWord(),
+					type != null ? type.getType().name : Type.ANY.name);
+			userDefinitionsContext.result.variables.add(userVarDef);
+		}
+
 		// On ajoute la variable
 		mMain.addGlobalDeclaration(variable);
 		mCurentBlock.addInstruction(this, variable);
@@ -993,7 +1293,95 @@ public class WordCompiler {
 		if (getVersion() >= 3 && isKeyword(word)) {
 			addError(new AnalyzeError(word, AnalyzeErrorLevel.ERROR, Error.VARIABLE_NAME_UNAVAILABLE));
 		}
-		LeekVariableDeclarationInstruction variable = new LeekVariableDeclarationInstruction(this, word, getCurrentFunction(), type);
+		LeekVariableDeclarationInstruction variable = new LeekVariableDeclarationInstruction(this, word,
+				getCurrentFunction(), type);
+
+		if (userDefinitionsContext != null) {
+			if (userDefinitionsContext.debug) {
+				System.out.println("[variableDeclaration] 1 Created with leekType: " + type + " for variable: "
+						+ word.getWord());
+			}
+
+			AbstractLeekBlock parentBlockRef = null;
+
+			// only add variables that are declared in the same file
+			if (userDefinitionsContext.aiFile == this.getAI()) {
+				if (userDefinitionsContext.debug) {
+					System.out.println("[variableDeclaration] Found user variable definition for variable: "
+							+ word.getWord());
+				}
+
+				boolean userCursorIsBeforeOrEqualWordLine = userDefinitionsContext
+						.userCursorLineBeforeOrEqual(word.getLocation().getStartLine());
+
+				// check if variable is declared inside a for block
+				if (mCurentBlock instanceof ForBlock || mCurentBlock instanceof ForeachBlock
+						|| mCurentBlock instanceof ForeachKeyBlock || mCurentBlock instanceof WhileBlock
+						|| mCurentBlock instanceof ClassMethodBlock || mCurentBlock instanceof ConditionalBloc) {
+					// check if user cursor is inside the for block
+					parentBlockRef = mCurentBlock;
+					Location parentBlockLocation = parentBlockRef.getLocation();
+					int endBlock = parentBlockRef.getEndBlock();
+					int parentBlockStartLine = parentBlockLocation.getStartLine();
+					int parentBlockEndColumn = parentBlockLocation.getEndColumn();
+					int parentBlockEndLine = parentBlockLocation.getEndLine();
+					int cursorLine = userDefinitionsContext.line;
+
+					if (userDefinitionsContext.debug) {
+						System.out.println(
+								"[variableDeclaration] " + userDefinitionsContext.userCursorLocationToString());
+						System.out.println(
+								"[variableDeclaration] ###### Scoped User variable: " + word.getWord()
+										+ " parentBlockStartLine: "
+										+ parentBlockStartLine
+										+ " parentBlockEndLine: " + parentBlockEndLine + " parentBlockEndColumn: "
+										+ parentBlockEndColumn
+										+ " block end: "
+										+ endBlock);
+					}
+
+					if (cursorLine >= parentBlockStartLine && cursorLine <= parentBlockEndLine) {
+						if (userDefinitionsContext.debug) {
+							System.out
+									.println("[variableDeclaration] >>>RETURN??<<< User variable: " + word.getWord()
+											+ " is inside the scoped Block at line " + cursorLine);
+						}
+						// do not add the variable to user definitions if cursor is inside the for block
+						return;
+					}
+
+				}
+
+				if (userCursorIsBeforeOrEqualWordLine) {
+					if (userDefinitionsContext.debug) {
+						System.out.println("[variableDeclaration] User variable: " + word.getWord()
+								+ " is BeforeOrEqual the user cursor line: " + userDefinitionsContext.line);
+					}
+				}
+
+				if (!userCursorIsBeforeOrEqualWordLine) {
+					UserVariableDeclaration userVarDef = new UserVariableDeclaration(word.getLocation().getStartLine(),
+							word.getLocation().getStartColumn(), word.getLocation().getFile().getName(),
+							word.getLocation().getFile().getFolder().getName(),
+							word.getWord(),
+							type != null ? type.getType().name : Type.ANY.name);
+					userVarDef.setParentBlockRef(parentBlockRef);
+					userDefinitionsContext.addVariable("[variableDeclaration]", userVarDef);
+				} else {
+					if (userDefinitionsContext.debug) {
+						System.out.println("[variableDeclaration] User variable (SKIP): " + word.getWord()
+								+ " is declared after the user cursor line: " + userDefinitionsContext.line);
+					}
+				}
+
+			} else {
+				if (userDefinitionsContext.debug) {
+					System.out.println("[variableDeclaration] User variable (SKIP): " + word.getWord()
+							+ " is in another file.");
+				}
+			}
+		}
+
 		// On regarde si une valeur est assignée
 		if (mTokens.hasMoreTokens() && mTokens.get().getWord().equals("=")) {
 			mTokens.skip();
@@ -1052,11 +1440,62 @@ public class WordCompiler {
 			mTokens.skip();
 			Token parent = mTokens.eat();
 			classDeclaration.setParent(parent);
+
+			if (this.userDefinitionsContext != null) {
+				if (this.userDefinitionsContext.debug) {
+					System.out.println("[classDeclaration] Class " + word.getWord()
+							+ " extends " + parent.getWord());
+				}
+				UserClassDefinition parentClassDef = this.userDefinitionsContext
+						.getClassDefinition(parent.getWord());
+				UserClassDefinition currentClassDef = this.userDefinitionsContext
+						.getClassDefinition(word.getWord());
+
+				if (parentClassDef != null && currentClassDef != null) {
+					if (this.userDefinitionsContext.debug) {
+						System.out.println("[classDeclaration] Found parent class definition for user class: "
+								+ word.getWord() + " -> " + parent.getWord());
+					}
+					currentClassDef.setParentClassName(parentClassDef.name);
+					// currentClassDef.set
+				} else if (this.userDefinitionsContext.debug) {
+					System.out.println("[classDeclaration] No parent class definition found for user class: "
+							+ word.getWord());
+				}
+			}
 		}
 		if (mTokens.get().getType() != TokenType.ACCOLADE_LEFT) {
 			throw new LeekCompilerException(mTokens.get(), Error.OPENING_CURLY_BRACKET_EXPECTED);
 		}
 		mTokens.skip();
+
+		UserVariableDeclaration tmpThisVar = null;
+
+		// we are entering the class scope
+		if (userDefinitionsContext != null) {
+			if (userDefinitionsContext.aiFile == this.getAI()) {
+				// check if user cursor is inside the class block
+				Location insideClassLocation = mTokens.get().getLocation();
+				int insideClassLocationStartLine = insideClassLocation.getStartLine();
+
+				if (!userDefinitionsContext.userCursorLineBefore(insideClassLocationStartLine)) {
+					Location classLocation = classDeclaration.getLocation();
+					int classStartLine = classLocation.getStartLine();
+					int classStartColumn = classLocation.getStartColumn();
+
+					// temporary add "this" variable to user definitions
+					tmpThisVar = new UserVariableDeclaration(
+							classStartLine,
+							classStartColumn,
+							insideClassLocation.getFile().getName(),
+							insideClassLocation.getFile().getFolder().getName(),
+							"this",
+							classDeclaration.getType().name);
+
+					userDefinitionsContext.addVariable("[classDeclaration enter]", tmpThisVar);
+				}
+			}
+		}
 
 		while (mTokens.hasMoreTokens() && mTokens.get().getType() != TokenType.ACCOLADE_RIGHT) {
 			if (isInterrupted()) throw new LeekCompilerException(mTokens.get(), Error.AI_TIMEOUT);
@@ -1098,6 +1537,29 @@ public class WordCompiler {
 		if (mTokens.get().getType() != TokenType.ACCOLADE_RIGHT) {
 			throw new LeekCompilerException(mTokens.get(), Error.END_OF_CLASS_EXPECTED);
 		}
+
+		// we are exiting the class scope, check if "this" variable needs to be removed
+		if (userDefinitionsContext != null && userDefinitionsContext.aiFile == this.getAI()) {
+			Location endTokenLocation = mTokens.get().getLocation();
+			int endTokenLine = endTokenLocation.getStartLine();
+
+			if (userDefinitionsContext.userCursorLineAfterOrEqual(endTokenLine)) {
+				// remove "this" variable from user definitions
+				userDefinitionsContext.removeVariable("[classDeclaration exit]", tmpThisVar);
+				if (userDefinitionsContext.debug) {
+					System.out.println(
+							"[classDeclaration] Removing 'this' variable as user cursor is after class end at line "
+									+ endTokenLine);
+				}
+			} else {
+				if (userDefinitionsContext.debug) {
+					System.out.println(
+							"[classDeclaration] Keeping 'this' variable as user cursor is before class end at line "
+									+ endTokenLine);
+				}
+			}
+		}
+
 		mTokens.skip();
 		mCurrentClass = null;
 	}
@@ -1157,7 +1619,30 @@ public class WordCompiler {
 			expr = readExpression();
 		} else if (mTokens.get().getType() == TokenType.PAR_LEFT) {
 			// Méthode
-			ClassMethodBlock method = classMethod(classDeclaration, name, false, isStatic, typeExpression == null ? Type.ANY : typeExpression.getType());
+			ClassMethodBlock method = classMethod(classDeclaration, name, false, isStatic,
+					typeExpression == null ? Type.ANY : typeExpression.getType());
+
+			if (this.userDefinitionsContext != null) {
+				UserClassDefinition classDef = this.userDefinitionsContext
+						.getClassDefinition(classDeclaration.getName());
+
+				if (classDef != null) {
+					// find corresponding method definition
+					UserClassMethodDefinition methodDef = classDef.getMethodByName(name.getWord());
+
+					if (methodDef != null) {
+						methodDef.setStatic("endClassMember", this.userDefinitionsContext.debug, isStatic);
+						methodDef.setLevel("endClassMember", this.userDefinitionsContext.debug, accessLevel.toString());
+					} else if (this.userDefinitionsContext.debug) {
+						System.out.println("[endClassMember] Warning: method definition not found for method "
+								+ name.getWord() + " in class " + classDeclaration.getName());
+					}
+				} else if (this.userDefinitionsContext.debug) {
+					System.out.println("[endClassMember] Warning: class definition is null for class "
+							+ classDeclaration.getName());
+				}
+			}
+
 			if (isStatic) {
 				classDeclaration.addStaticMethod(this, name, method, accessLevel);
 			} else {
@@ -1181,6 +1666,45 @@ public class WordCompiler {
 	public void classConstructor(ClassDeclarationInstruction classDeclaration, AccessLevel accessLevel, Token token) throws LeekCompilerException {
 		ClassMethodBlock constructor = classMethod(classDeclaration, token, true, false, Type.VOID);
 		classDeclaration.addConstructor(this, constructor, accessLevel);
+
+		ArrayList<LeekVariableDeclarationInstruction> parameters = constructor.getParametersDeclarations();
+
+		if (this.userDefinitionsContext != null) {
+			classDeclaration.checkUserClassDefinitions("classConstructor", this);
+			UserClassDefinition classDefinition = this.userDefinitionsContext
+					.getClassDefinition(classDeclaration.getName());
+
+			if (classDeclaration != null) {
+				int col = constructor.getLocation().getStartColumn();
+				int line = constructor.getLocation().getStartLine();
+				String fileName = constructor.getLocation().getFile().getName();
+				String folderName = constructor.getLocation().getFile().getFolder().getName();
+
+				UserClassMethodDefinition constructorDefinition = new UserClassMethodDefinition(line, col, fileName,
+						folderName, token.getWord(),
+						"void");
+				constructorDefinition.setLevel("classConstructor", this.userDefinitionsContext.debug,
+						accessLevel.toString());
+
+				for (var param : parameters) {
+					constructorDefinition.addArgument("[classConstructor]",
+							this.userDefinitionsContext.debug,
+							new UserArgumentDefinition(param.getName(),
+									param.getType() != null ? param.getType().toString() : "ANY"));
+				}
+
+				this.userDefinitionsContext.addClassConstructor("classConstructor", classDefinition,
+						constructorDefinition);
+
+				if (this.userDefinitionsContext.debug) {
+					for (var param : parameters) {
+						System.out.println("[classConstructor] Parameter: " + param.getName()
+								+ " Type: " + param.getType().toString());
+					}
+				}
+				// UserClassMethodDefinition methoconstructorDefinition = null;
+			}
+		}
 	}
 
 	public ClassMethodBlock classMethod(ClassDeclarationInstruction classDeclaration, Token token, boolean isConstructor, boolean isStatic, Type returnType) throws LeekCompilerException {
@@ -1191,6 +1715,43 @@ public class WordCompiler {
 		if (word.getType() != TokenType.PAR_LEFT) {
 			throw new LeekCompilerException(word, Error.OPENING_PARENTHESIS_EXPECTED);
 		}
+
+		UserClassMethodDefinition methodDefinition = null;
+		UserClassDefinition classDefinition = null;
+
+		if (this.userDefinitionsContext != null) {
+			if (this.userDefinitionsContext.debug) {
+				// print all word infos
+				System.out.println("[classMethod] token: " + token.getWord()
+						+ " Type: " + token.getType());
+			}
+			// when class has never been instanced in the code, the execution will go here
+			// first
+			classDeclaration.checkUserClassDefinitions("classMethod", this);
+
+			if (this.userDefinitionsContext.debug) {
+				System.out.println("[classMethod] Created method definition for method "
+						+ (isConstructor ? "constructor" : token.getWord())
+						+ " in class " + classDeclaration.getName());
+			}
+
+			// constructors are added in classConstructor method
+			if (!isConstructor) {
+				int col = method.getLocation().getStartColumn();
+				int line = method.getLocation().getStartLine();
+				String fileName = method.getLocation().getFile().getName();
+				String folderName = method.getLocation().getFile().getFolder().getName();
+
+				methodDefinition = new UserClassMethodDefinition(line, col, fileName, folderName,
+						token.getWord(), returnType.toString());
+
+				classDefinition = this.userDefinitionsContext
+						.getClassDefinition(classDeclaration.getName());
+
+				this.userDefinitionsContext.addClassMethod("[classMethod]", classDefinition, methodDefinition);
+			}
+		}
+
 		int param_count = 0;
 		while (mTokens.hasMoreTokens() && mTokens.get().getType() != TokenType.PAR_RIGHT) {
 			if (isInterrupted()) throw new LeekCompilerException(mTokens.get(), Error.AI_TIMEOUT);
@@ -1214,6 +1775,46 @@ public class WordCompiler {
 			}
 
 			method.addParameter(this, param, equal, type == null ? Type.ANY : type.getType(), defaultValue);
+
+			// the ref doesn't match when the method ends, why?
+			if (this.userDefinitionsContext != null) {
+				// register param as global variable until we check if it's out of scope
+				Location paramLocation = param.getLocation();
+
+				if (this.userDefinitionsContext.debug) {
+					System.out.println("[classMethod] Created parameter variable for parameter "
+							+ param.getWord()
+							+ " paramLocation: " + paramLocation.getStartLine() + ":" + paramLocation.getStartColumn());
+				}
+
+				if (this.userDefinitionsContext.userCursorLineAfter(paramLocation.getStartLine())
+						&& this.userDefinitionsContext.userCursorInSameFile(paramLocation
+								.getFile())) {
+					UserVariableDeclaration methodParamVariable = new UserVariableDeclaration(
+							param.getLocation().getStartLine(),
+							param.getLocation().getStartColumn(),
+							param.getLocation().getFile().getName(),
+							param.getLocation().getFile().getFolder().getName(),
+							param.getWord(),
+							type == null ? "ANY" : type.getType().toString());
+
+					methodParamVariable.setParentBlockRef(method);
+					this.userDefinitionsContext.addVariable("[classMethod (param)]", methodParamVariable);
+				}
+			}
+
+			if (this.userDefinitionsContext != null && !isConstructor) {
+				if (methodDefinition != null) {
+					UserArgumentDefinition argDef = new UserArgumentDefinition(param.getWord(),
+							type == null ? "ANY" : type.getType().toString());
+					methodDefinition.addArgument("[classMethod]", this.userDefinitionsContext.debug, argDef);
+				} else {
+					System.out.println("Warning: methodDefinition is null for method "
+							+ (isConstructor ? "constructor" : token.getWord()));
+				}
+
+			}
+
 			param_count++;
 
 			if (mTokens.get().getType() == TokenType.VIRG) {
@@ -1247,14 +1848,64 @@ public class WordCompiler {
 				mCurentBlock = mCurentBlock.endInstruction();
 				dowhileendBlock(do_block);
 				mTokens.skip();
-			} else mCurentBlock = mCurentBlock.endInstruction();
-			if (!mTokens.hasMoreTokens()) break;
+			} else {
+				if (userDefinitionsContext != null && !isConstructor) {
+					if (userDefinitionsContext.debug) {
+						System.out.println("[classMethod] Current block: " + mCurentBlock.getClass().getSimpleName()
+								+ " is full: " + mCurentBlock.isFull());
+						Location loc = mCurentBlock.getLocation();
+						System.out.println("		Block location: " + loc.getStartLine() + ":" + loc.getStartColumn()
+								+ " to " + loc.getEndLine() + ":" + loc.getEndColumn());
+					}
+				}
+				mCurentBlock = mCurentBlock.endInstruction();
+			}
+			if (!mTokens.hasMoreTokens())
+				break;
 
 			// On regarde si on veut fermer la fonction anonyme
 			if (mTokens.get().getType() == TokenType.ACCOLADE_RIGHT && mCurentBlock == method) {
+				if (userDefinitionsContext != null) {
+					Location closingBracketLocation = mTokens.get().getLocation();
+					int closingBracketLine = closingBracketLocation.getStartLine();
+					int closingBracketColumn = closingBracketLocation.getStartColumn();
+
+					if (userDefinitionsContext.debug && !isConstructor) {
+						System.out.println("[classMethod] ACCOLADE_RIGHT: " + mTokens.get().getWord()
+								+ " closingBracketLine: " + closingBracketLine + ", closingBracketColumn: "
+								+ closingBracketColumn);
+					}
+
+					UserVariableDeclaration lastVar = userDefinitionsContext.getLatestDeclaredVariable();
+
+					while (lastVar != null) {
+						if (lastVar.getParentBlockRef() == method) {
+							if (userDefinitionsContext.debug) {
+								System.out.println("\t" + userDefinitionsContext.userCursorLocationToString());
+							}
+							if (userDefinitionsContext.userCursorLineAfterOrEqual(closingBracketLine)) {
+								if (userDefinitionsContext.debug) {
+									System.out.println("[classMethod] Removing variable: " + lastVar.name
+											+ " declared at line " + lastVar.line
+											+ " because user cursor is after parent method end at line "
+											+ closingBracketLine);
+								}
+								userDefinitionsContext.removeVariable("[classMethod]", lastVar);
+							}
+							lastVar.clearParentBlockRef();
+						} else {
+							lastVar.clearParentBlockRef();
+							break;
+						}
+						lastVar = userDefinitionsContext.getLatestDeclaredVariable();
+					}
+				}
 				mTokens.skip();
 				break; // Fermeture de la fonction anonyme
-			} else compileWord();
+			} else {
+
+				compileWord();
+			}
 		}
 		// On remet le bloc initial
 		mCurentBlock = initialBlock;

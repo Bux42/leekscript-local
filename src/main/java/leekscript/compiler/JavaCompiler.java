@@ -155,7 +155,7 @@ public class JavaCompiler {
 			if (mapping != null) {
 				location = file.getCompiledCode().getFiles().get(mapping.getAI()) + ":" + mapping.getLeekScriptLine();
 			}
-
+			System.out.println("Java compilation failed:\n" + output.toString());
 			if (output.toString().contains("code too large")) {
 				throw new LeekScriptException(Error.CODE_TOO_LARGE, output.toString(), location);
 			} else {

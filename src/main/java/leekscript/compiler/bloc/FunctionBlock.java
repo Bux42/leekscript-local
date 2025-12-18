@@ -81,6 +81,10 @@ public class FunctionBlock extends AbstractLeekBlock {
 		this.type.add_argument(type, false);
 	}
 
+	public ArrayList<LeekVariableDeclarationInstruction> getParameterDeclarations() {
+		return this.mParameterDeclarations;
+	}
+
 	public void setReturnType(Type type) {
 		this.type.setReturnType(type);
 	}

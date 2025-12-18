@@ -151,6 +151,9 @@ public class MainLeekBlock extends AbstractLeekBlock {
 			var previousAI = mCompiler.getCurrentAI();
 			mCompiler.setCurrentAI(ai);
 			WordCompiler newCompiler = new WordCompiler(ai, compiler.getVersion(), compiler.getOptions());
+			if (compiler.userDefinitionsContext != null) {
+				newCompiler.setUserDefinitionContext(compiler.userDefinitionsContext);
+			}
 			newCompiler.setMainBlock(this);
 			newCompiler.firstPass();
 			compiler.getAI().getErrors().addAll(ai.getErrors());
@@ -176,6 +179,9 @@ public class MainLeekBlock extends AbstractLeekBlock {
 			var previousAI = mCompiler.getCurrentAI();
 			mCompiler.setCurrentAI(ai);
 			WordCompiler newCompiler = new WordCompiler(ai, compiler.getVersion(), compiler.getOptions());
+			if (compiler.userDefinitionsContext != null) {
+				newCompiler.setUserDefinitionContext(compiler.userDefinitionsContext);
+			}
 			newCompiler.setMainBlock(this);
 			newCompiler.secondPass();
 			compiler.getAI().getErrors().addAll(ai.getErrors());

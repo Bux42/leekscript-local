@@ -31,7 +31,11 @@ public class IACompiler {
 	private AIFile mCurrentAI;
 	private long analyzeStart;
 
-	public IACompiler() {}
+	/* User definition variables */
+	private UserCodeDefinitionContext userDefinitionsContext = null;
+
+	public IACompiler() {
+	}
 
 	public void addError(Location location, Error errorType, String[] parameters) {
 		JSONArray error = new JSONArray();
@@ -45,6 +49,28 @@ public class IACompiler {
 		if (parameters != null)
 			error.add(parameters);
 		informations.add(error);
+	}
+
+	// For user code definitions (autocomplete, go to definition, etc.)
+	public void getDefinitions(UserCodeDefinitionContext userDefinitionsContext) {
+		this.analyzeStart = System.currentTimeMillis(); // For timeout
+
+		this.userDefinitionsContext = userDefinitionsContext;
+
+		try {
+			AIFile ai = userDefinitionsContext.aiFile;
+			ai.clearErrors();
+			WordCompiler compiler = new WordCompiler(ai, ai.getVersion(), ai.getOptions());
+			compiler.setUserDefinitionContext(userDefinitionsContext);
+
+			MainLeekBlock main = new MainLeekBlock(this, compiler, ai);
+			main.setWordCompiler(compiler);
+
+			compiler.readCode();
+			compiler.analyze();
+		} catch (LeekCompilerException e) {
+			this.userDefinitionsContext.result.exception = e;
+		}
 	}
 
 	public AnalyzeResult analyze(AIFile ai) throws LeekCompilerException {
