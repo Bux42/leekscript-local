@@ -70,7 +70,7 @@ public class IACompiler {
 			compiler.readCode();
 			compiler.analyze();
 		} catch (LeekCompilerException e) {
-			this.userDefinitionsContext.result.exception = e;
+			this.userDefinitionsContext.result.setException(e);
 		}
 	}
 

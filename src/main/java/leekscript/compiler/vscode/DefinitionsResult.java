@@ -8,7 +8,7 @@ public class DefinitionsResult {
     public JSONArray globals = new JSONArray();
     public JSONArray variables = new JSONArray();
 
-    public Exception exception = null;
+    private Exception exception = null;
 
     public void debugDefinedNames() {
         if (!classes.isEmpty()) {
@@ -39,5 +39,10 @@ public class DefinitionsResult {
                 System.out.println(" - " + ((UserVariableDeclaration) variable).name);
             }
         }
+    }
+
+    public void setException(Exception exception) {
+        System.out.println("Setting exception in DefinitionsResult: " + exception.getMessage());
+        this.exception = exception;
     }
 }
