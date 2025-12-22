@@ -17,7 +17,7 @@ public class UserFunctionDefinition extends UserDefinition {
 
     public String toString() {
         return "Function " + name + " (return type: " + returnType + ") at " + line + ":" + col + " in file "
-                + fileName;
+                + fileName + " folder " + folderName;
     }
 
 }

@@ -16,7 +16,7 @@ public class UserClassFieldDefinition extends UserDefinition {
 
     public String toString() {
         return "Field " + name + " (level: " + level + ", type: " + type + ") at " + line + ":" + col + " in file "
-                + fileName;
+                + fileName + " folder " + folderName;
     }
 
     public void setStatic(String debugString, boolean debug, boolean isStatic) {

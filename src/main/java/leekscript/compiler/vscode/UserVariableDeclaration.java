@@ -5,6 +5,7 @@ import leekscript.compiler.bloc.AbstractLeekBlock;
 public class UserVariableDeclaration extends UserDefinition {
     public String name;
     public String type;
+    
     private AbstractLeekBlock parentBlockRef = null;
 
     public UserVariableDeclaration(int line, int col, String fileName, String folderName, String name, String type) {
@@ -14,7 +15,7 @@ public class UserVariableDeclaration extends UserDefinition {
     }
 
     public String toString() {
-        return "Variable " + name + " (type: " + type + ") at " + line + ":" + col + " in file " + fileName;
+        return "Variable " + name + " (type: " + type + ") at " + line + ":" + col + " in file " + fileName + " folder " + folderName;
     }
 
     /**
