@@ -1323,7 +1323,8 @@ public class WordCompiler {
 				// check if variable is declared inside a for block
 				if (mCurentBlock instanceof ForBlock || mCurentBlock instanceof ForeachBlock
 						|| mCurentBlock instanceof ForeachKeyBlock || mCurentBlock instanceof WhileBlock
-						|| mCurentBlock instanceof ClassMethodBlock || mCurentBlock instanceof ConditionalBloc) {
+						|| mCurentBlock instanceof ClassMethodBlock || mCurentBlock instanceof ConditionalBloc
+						|| mCurentBlock instanceof FunctionBlock) {
 					// check if user cursor is inside the for block
 					parentBlockRef = mCurentBlock;
 					Location parentBlockLocation = parentBlockRef.getLocation();
