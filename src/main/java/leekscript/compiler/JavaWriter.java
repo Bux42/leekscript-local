@@ -315,11 +315,12 @@ public class JavaWriter {
 		
 		if (type != Type.ANY) {
 			if (parenthesis) addCode("(");
-			addCode("(" + type.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
-		}
-		value.writeJavaCode(mainblock, this, type != Type.ANY || parenthesis);
-		if (type != Type.ANY && parenthesis) {
+			addCode("(" + type.getJavaPrimitiveName(mainblock.getVersion()) + ") (");
+			value.writeJavaCode(mainblock, this, false);
 			addCode(")");
+			if (parenthesis) addCode(")");
+		} else {
+			value.writeJavaCode(mainblock, this, parenthesis);
 		}
 	}
 
@@ -493,15 +494,15 @@ public class JavaWriter {
 			if (ct.getTypes().size() == 2 && ct.getTypes().stream().anyMatch(t -> t == Type.NULL)) {
 				for (var t : ct.getTypes()) {
 					if (t != Type.NULL) {
-						if (t == Type.INT) return "(Long) " + v;
-						if (t == Type.REAL) return "(Double) " + v;
-						if (t == Type.BOOL) return "(Boolean) " + v;
-						if (t == Type.STRING) return "(String) " + v;
+						if (t == Type.INT) return "(Long) (" + v + ")";
+						if (t == Type.REAL) return "(Double) (" + v + ")";
+						if (t == Type.BOOL) return "(Boolean) (" + v + ")";
+						if (t == Type.STRING) return "(String) (" + v + ")";
 					}
 				}
 			}
 		}
-		return "(" + type.getJavaName(version) + ") " + v;
+		return "(" + type.getJavaName(version) + ") (" + v + ")";
 	}
 
 	public boolean isInConstructor() {
