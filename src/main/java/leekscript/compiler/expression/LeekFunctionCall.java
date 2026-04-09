@@ -6,11 +6,13 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import leekscript.compiler.AnalyzeError;
+import leekscript.compiler.Hover;
 import leekscript.compiler.Token;
 import leekscript.compiler.JavaWriter;
 import leekscript.compiler.Location;
 import leekscript.compiler.WordCompiler;
 import leekscript.compiler.AnalyzeError.AnalyzeErrorLevel;
+import leekscript.compiler.bloc.ClassMethodBlock;
 import leekscript.compiler.bloc.FunctionBlock;
 import leekscript.compiler.bloc.MainLeekBlock;
 import leekscript.compiler.exceptions.LeekCompilerException;
@@ -39,6 +41,7 @@ public class LeekFunctionCall extends Expression {
 	private boolean is_method = false;
 	private boolean is_static_method = false;
 	private ClassDeclarationMethod method;
+	private ClassMethodBlock constructorBlock = null;
 	private Type functionType = Type.ANY;
 
 	public LeekFunctionCall(Token openParenthesis) {
@@ -67,6 +70,26 @@ public class LeekFunctionCall extends Expression {
 	@Override
 	public Type getType() {
 		return type;
+	}
+
+	@Override
+	public Hover hover(Token token) {
+		if (constructorBlock != null) {
+			return new Hover(type, token.getLocation(), constructorBlock.getLocation());
+		}
+		return super.hover(token);
+	}
+
+	public boolean isConstructorCall() {
+		return constructorBlock != null;
+	}
+
+	public int getParameterCount() {
+		return mParameters.size();
+	}
+
+	public Expression getCallExpression() {
+		return mExpression;
 	}
 
 	@Override
@@ -314,7 +337,7 @@ public class LeekFunctionCall extends Expression {
 				}
 			} else {
 				// Java doesn't like a single null for Object... argument
-				if (argCount == 1 && system_function == null && !unsafe) {
+				if (argCount == 1 && system_function == null && !unsafe && !is_method && !is_static_method) {
 					writer.addCode("new Object[] { null }");
 				} else {
 					writer.addCode("null");
@@ -396,6 +419,7 @@ public class LeekFunctionCall extends Expression {
 						for (var count : methods.keySet()) {
 							if (count == mParameters.size()) {
 								ok = true;
+								is_method = true;
 								functionType = methods.get(count).block.getType();
 								break end;
 							}
@@ -457,8 +481,7 @@ public class LeekFunctionCall extends Expression {
 
 				var f = compiler.getMainBlock().getUserFunction(v.getName());
 				if (f != null) {
-					int nb_params = f.countParameters();
-					if (mParameters.size() != nb_params) {
+					if (mParameters.size() < f.getMinParameters() || mParameters.size() > f.getMaxParameters()) {
 						compiler.addError(new AnalyzeError(v.getToken(), AnalyzeErrorLevel.ERROR, Error.INVALID_PARAMETER_COUNT));
 					}
 					verifyVersions(compiler, f.getVersions());
@@ -484,6 +507,10 @@ public class LeekFunctionCall extends Expression {
 				} else if (constructor.level == AccessLevel.PROTECTED && (compiler.getCurrentClass() == null || !compiler.getCurrentClass().descendsFrom(clazz))) {
 					compiler.addError(new AnalyzeError(v.getToken(), AnalyzeErrorLevel.ERROR, Error.PROTECTED_CONSTRUCTOR, new String[] { clazz.getName() }));
 				}
+				if (constructor != null && constructor.block != null) {
+					this.constructorBlock = constructor.block;
+					v.getToken().setExpression(this);
+				}
 				this.type = clazz.getEmptyType();
 
 			} else if (v.getVariableType() == VariableType.SUPER) {
@@ -506,10 +533,10 @@ public class LeekFunctionCall extends Expression {
 			var oa = (LeekObjectAccess) mExpression;
 			var o = oa.getObject();
 
-			if (o.getType() instanceof ClassType ct) {
+			if (o.getType() instanceof ClassType ct || (o instanceof LeekVariable lv && lv.getVariableType() == VariableType.SUPER)) {
 
 				// on regarde si le nombre d'arguments est correct
-				var current = ct.getClassDeclaration();
+				var current = o.getType() instanceof ClassType ct2 ? ct2.getClassDeclaration() : ((LeekVariable) o).getClassDeclaration().getParent();
 				end:
 				while (current != null) {
 					var methods = current.getMethod(oa.getField());

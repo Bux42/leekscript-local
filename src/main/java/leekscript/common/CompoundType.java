@@ -93,7 +93,11 @@ public class CompoundType extends Type {
 	}
 
 	public boolean isArrayOrNull() {
-		return types.stream().anyMatch(t -> t.isArray()) && types.stream().anyMatch(t -> t == Type.NULL);
+		return types.size() == 2 && types.stream().anyMatch(t -> t.isArray()) && types.stream().anyMatch(t -> t == Type.NULL);
+	}
+
+	public boolean isMapOrNull() {
+		return types.size() == 2 && types.stream().anyMatch(t -> t.isMap()) && types.stream().anyMatch(t -> t == Type.NULL);
 	}
 
 	public boolean canBeIterable() {
@@ -160,6 +164,13 @@ public class CompoundType extends Type {
 	@Override
 	public Type returnType() {
 		return Type.compound(this.types.stream().map(t -> t.returnType()).collect(Collectors.toCollection(HashSet::new)));
+	}
+
+	public Type removeType(Type target) {
+		var remaining = this.types.stream().filter(t -> t != target).collect(Collectors.toCollection(HashSet::new));
+		if (remaining.isEmpty()) return this;
+		if (remaining.size() == 1) return remaining.iterator().next();
+		return Type.compound(remaining);
 	}
 
 	public Type assertNotNull() {

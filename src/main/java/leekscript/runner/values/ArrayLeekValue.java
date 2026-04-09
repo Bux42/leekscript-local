@@ -257,6 +257,21 @@ public class ArrayLeekValue extends ArrayList<Object> implements GenericArrayLee
 		}
 	}
 
+	public Object put_coalesce_eq(AI ai, Object key, Object value) throws LeekRunException {
+		ai.opsNoCheck(ArrayLeekValue.WRITE_OPERATIONS);
+		int i = (int) ai.integer(key);
+		if (i < 0) i += size();
+		try {
+			var current = get(i);
+			var new_value = current != null ? current : value;
+			set(i, new_value);
+			return new_value;
+		} catch (IndexOutOfBoundsException e) {
+			wrongIndexError(ai, i);
+			return null;
+		}
+	}
+
 	public Object put_sub_eq(AI ai, Object key, Object value) throws LeekRunException {
 		ai.opsNoCheck(ArrayLeekValue.WRITE_OPERATIONS);
 		int i = (int) ai.integer(key);
@@ -943,6 +958,19 @@ public class ArrayLeekValue extends ArrayList<Object> implements GenericArrayLee
 		}
 		ai.increaseRAM(ram, result.size());
 		return result;
+	}
+
+	public Object arrayFind(AI ai, FunctionLeekValue function) throws LeekRunException {
+		ai.opsNoCheck(1);
+		for (int i = 0; i < size(); ++i) {
+			var v = get(i);
+			if (ai.bool(function.run(ai, null, v, (long) i, this))) {
+				ai.ops(i);
+				return v;
+			}
+		}
+		ai.ops(size());
+		return null;
 	}
 
 	public boolean arraySome(AI ai, FunctionLeekValue function) throws LeekRunException {

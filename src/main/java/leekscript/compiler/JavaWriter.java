@@ -225,8 +225,22 @@ public class JavaWriter {
 			addCode(")");
 			return;
 		}
+		else if (type.isArrayOrNull()) {
+			addCode(mainblock.getVersion() >= 4 ? "toArrayOrNull(" : "toLegacyArrayOrNull(");
+			addCode(index + ", ");
+			value.writeJavaCode(mainblock, this, false);
+			addCode(")");
+			return;
+		}
 		else if (type.isMap()) {
 			addCode("toMap(");
+			addCode(index + ", ");
+			value.writeJavaCode(mainblock, this, false);
+			addCode(")");
+			return;
+		}
+		else if (type.isMapOrNull()) {
+			addCode("toMapOrNull(");
 			addCode(index + ", ");
 			value.writeJavaCode(mainblock, this, false);
 			addCode(")");
@@ -237,7 +251,7 @@ public class JavaWriter {
 				if (parenthesis) {
 					addCode("(");
 				}
-				addCode("(long) ");
+				addCode("(long)(double) ");
 				value.writeJavaCode(mainblock, this, true);
 				if (parenthesis) {
 					addCode(")");
@@ -254,7 +268,7 @@ public class JavaWriter {
 				if (parenthesis) {
 					addCode("(");
 				}
-				addCode("(double) ");
+				addCode("(double)(long) ");
 				value.writeJavaCode(mainblock, this, true);
 				if (parenthesis) {
 					addCode(")");
@@ -277,7 +291,7 @@ public class JavaWriter {
 								if (parenthesis) {
 									addCode("(");
 								}
-								addCode("(double) ");
+								addCode("(double)(long) ");
 								value.writeJavaCode(mainblock, this, true);
 								if (parenthesis) {
 									addCode(")");
@@ -288,7 +302,7 @@ public class JavaWriter {
 								if (parenthesis) {
 									addCode("(");
 								}
-								addCode("(long) ");
+								addCode("(long)(double) ");
 								value.writeJavaCode(mainblock, this, true);
 								if (parenthesis) {
 									addCode(")");

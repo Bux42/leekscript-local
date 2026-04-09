@@ -13,8 +13,9 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -29,6 +30,7 @@ public class JavaCompiler {
 	private static class AIClassEntry {
 		Class<?> clazz;
 		long timestamp;
+
 		public AIClassEntry(Class<?> clazz, long timestamp) {
 			this.clazz = clazz;
 			this.timestamp = timestamp;
@@ -38,17 +40,19 @@ public class JavaCompiler {
 	// SoftReference avec nom de classe pour le logging
 	private static class AIClassSoftReference extends SoftReference<AIClassEntry> {
 		final String className;
+
 		public AIClassSoftReference(String className, AIClassEntry entry, ReferenceQueue<AIClassEntry> queue) {
 			super(entry, queue);
 			this.className = className;
 		}
 	}
 
-	private static javax.tools.JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
 	public final static String IA_PATH = "ai";
+	private static javax.tools.JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+	private static final Semaphore compileSemaphore = new Semaphore(4);
 	private static String classpath;
 	private static List<String> arguments = new ArrayList<>();
-	private static HashMap<String, AIClassSoftReference> aiCache = new HashMap<>();
+	private static ConcurrentHashMap<String, AIClassSoftReference> aiCache = new ConcurrentHashMap<>();
 	private static ReferenceQueue<AIClassEntry> refQueue = new ReferenceQueue<>();
 
 	public static int getCacheSize() {
@@ -80,7 +84,8 @@ public class JavaCompiler {
 	public static AI compile(AIFile file, Options options) throws LeekScriptException, LeekCompilerException {
 
 		var root = new File(IA_PATH);
-		if (!root.exists()) root.mkdir();
+		if (!root.exists())
+			root.mkdir();
 
 		String fileName = file.getJavaClass() + ".java";
 		File compiled = Paths.get(IA_PATH, file.getJavaClass() + ".class").toFile();
@@ -107,13 +112,15 @@ public class JavaCompiler {
 		}
 
 		// Utilisation du cache de class dans le file system
-		if (options.useCache() && compiled.exists() && compiled.length() != 0 && compiled.lastModified() >= file.getTimestamp()) {
+		if (options.useCache() && compiled.exists() && compiled.length() != 0
+				&& compiled.lastModified() >= file.getTimestamp()) {
 			// System.out.println("Load AI " + file.getPath() + " from disk");
 			try {
 				// Chaque AI a son propre ClassLoader éphémère pour permettre le GC des classes
 				// Le ClassLoader ne doit pas être fermé car il invaliderait la classe chargée
 				@SuppressWarnings("resource")
-				var classLoader = new URLClassLoader(new URL[] { new File(IA_PATH).toURI().toURL() }, JavaCompiler.class.getClassLoader());
+				var classLoader = new URLClassLoader(new URL[] { new File(IA_PATH).toURI().toURL() },
+						JavaCompiler.class.getClassLoader());
 				var clazz = classLoader.loadClass(file.getJavaClass());
 				entry = new AIClassEntry(clazz, file.getTimestamp());
 				aiCache.put(file.getJavaClass(), new AIClassSoftReference(file.getJavaClass(), entry, refQueue));
@@ -162,12 +169,24 @@ public class JavaCompiler {
 		}
 
 		t = System.nanoTime();
-		var fileManager = new SimpleFileManager(compiler.getStandardFileManager(null, null, null));
+		SimpleFileManager fileManager;
 		var output = new StringWriter();
-		var compilationUnits = Collections.singletonList(new SimpleSourceFile(fileName, file.getCompiledCode().getJavaCode()));
-		var task = compiler.getTask(output, fileManager, null, arguments, null, compilationUnits);
-
-		boolean result = task.call();
+		boolean result;
+		try {
+			compileSemaphore.acquire();
+			try {
+				fileManager = new SimpleFileManager(compiler.getStandardFileManager(null, null, null));
+				var compilationUnits = Collections
+						.singletonList(new SimpleSourceFile(fileName, file.getCompiledCode().getJavaCode()));
+				var task = compiler.getTask(output, fileManager, null, arguments, null, compilationUnits);
+				result = task.call();
+			} finally {
+				compileSemaphore.release();
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new LeekScriptException(Error.COMPILE_JAVA, "Compilation interrupted");
+		}
 		long compile_time = System.nanoTime() - t;
 
 		if (!result) { // Java compilation failed
@@ -206,7 +225,8 @@ public class JavaCompiler {
 
 			if (options.useCache()) { // Save bytecode
 				try {
-					var classFile = new FileOutputStream(Paths.get(IA_PATH, compiledClass.getName() + ".class").toFile());
+					var classFile = new FileOutputStream(
+							Paths.get(IA_PATH, compiledClass.getName() + ".class").toFile());
 					classFile.write(compiledClass.getCompiledBinaries());
 					classFile.close();
 				} catch (IOException e) {
@@ -214,7 +234,8 @@ public class JavaCompiler {
 				}
 			}
 
-			if (compiledClass.getName().equals(file.getJavaClass())) continue;
+			if (compiledClass.getName().equals(file.getJavaClass()))
+				continue;
 			try {
 				classLoader.loadClass(compiledClass.getName());
 			} catch (Exception e) {
@@ -237,7 +258,8 @@ public class JavaCompiler {
 			ai.increaseRAMDirect((int) (java.length() * 10));
 
 			if (options.useCache()) {
-				aiCache.put(file.getJavaClass(), new AIClassSoftReference(file.getJavaClass(), new AIClassEntry(clazz, file.getTimestamp()), refQueue));
+				aiCache.put(file.getJavaClass(), new AIClassSoftReference(file.getJavaClass(),
+						new AIClassEntry(clazz, file.getTimestamp()), refQueue));
 			}
 			return ai;
 		} catch (Exception e) {

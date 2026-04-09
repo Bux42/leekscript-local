@@ -52,6 +52,7 @@ public class MainLeekBlock extends AbstractLeekBlock {
 
 	public MainLeekBlock(IACompiler compiler, WordCompiler wordCompiler, AIFile ai) throws LeekCompilerException {
 		super(null, null);
+		this.mMain = this;
 
 		// On ajoute l'IA pour pas pouvoir l'include
 		mIncluded.add(ai);
@@ -61,7 +62,7 @@ public class MainLeekBlock extends AbstractLeekBlock {
 		mCompiler.setCurrentAI(ai);
 
 		if (ai.getVersion() >= 2) {
-			var classClass = new ClassDeclarationInstruction(new Token("Class"), 0, ai, true, this);
+			var classClass = new ClassDeclarationInstruction(new Token("Class"), 0, ai, true, this, Type.CLASS);
 			classClass.addField(wordCompiler, new Token("name"), Type.STRING, null, AccessLevel.PUBLIC, true);
 			classClass.addField(wordCompiler, new Token("super"), Type.CLASS, null, AccessLevel.PUBLIC, true);
 			classClass.addField(wordCompiler, new Token("fields"), Type.ARRAY_STRING, null, AccessLevel.PUBLIC, true);
@@ -152,7 +153,11 @@ public class MainLeekBlock extends AbstractLeekBlock {
 			mCompiler.setCurrentAI(ai);
 			WordCompiler newCompiler = new WordCompiler(ai, compiler.getVersion(), compiler.getOptions());
 			newCompiler.setMainBlock(this);
-			newCompiler.firstPass();
+			try {
+				newCompiler.firstPass();
+			} catch (LeekCompilerException e) {
+				// On continue pour que les autres includes soient parsés
+			}
 			compiler.getAI().getErrors().addAll(ai.getErrors());
 			mCompiler.setCurrentAI(previousAI);
 			return true;
@@ -177,7 +182,11 @@ public class MainLeekBlock extends AbstractLeekBlock {
 			mCompiler.setCurrentAI(ai);
 			WordCompiler newCompiler = new WordCompiler(ai, compiler.getVersion(), compiler.getOptions());
 			newCompiler.setMainBlock(this);
-			newCompiler.secondPass();
+			try {
+				newCompiler.secondPass();
+			} catch (LeekCompilerException e) {
+				// On continue pour que les autres includes soient parsés
+			}
 			compiler.getAI().getErrors().addAll(ai.getErrors());
 			mCompiler.setCurrentAI(previousAI);
 			return true;
@@ -386,6 +395,10 @@ public class MainLeekBlock extends AbstractLeekBlock {
 
 	public Set<AIFile> getIncludedAIs() {
 		return mIncluded;
+	}
+
+	public List<ClassDeclarationInstruction> getUserClasses() {
+		return mUserClassesList;
 	}
 
 	public IACompiler getCompiler() {

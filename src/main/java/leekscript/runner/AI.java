@@ -81,9 +81,9 @@ public abstract class AI {
 	private Set<RamUsage> ramUsages = new HashSet<>(); // Set est plus efficace quand la limite de RAM est souvent atteinte (List est plus efficace quand la limite n'est pas atteinte souvent)
 	// private List<RamUsage> ramUsages = new ArrayList<>();
 
-	private static final Map<Class<?>, Map<String, List<Method>>> methodCache = new HashMap<>();
-	private static final Map<Class<?>, java.lang.reflect.Field[]> fieldCache = new HashMap<>();
-	private static final Map<Class<?>, Map<String, Object>> singleFieldCache = new HashMap<>();
+	private static final Map<Class<?>, Map<String, List<Method>>> methodCache = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final Map<Class<?>, java.lang.reflect.Field[]> fieldCache = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final Map<Class<?>, Map<String, Object>> singleFieldCache = new java.util.concurrent.ConcurrentHashMap<>();
 	private static final Object FIELD_NOT_FOUND = new Object();
 
 	protected TreeMap<Integer, LineMapping> mLinesMapping = new TreeMap<>();
@@ -1888,6 +1888,33 @@ public abstract class AI {
 		return null;
 	}
 
+	public Object field_coalesce_eq(Object object, String field, Object value, ClassLeekValue fromClass) throws LeekRunException {
+		if (object instanceof ObjectLeekValue) {
+			return ((ObjectLeekValue) object).field_coalesce_eq(field, value);
+		}
+		if (object instanceof ClassLeekValue) {
+			return ((ClassLeekValue) object).field_coalesce_eq(field, value);
+		}
+		try {
+			var f = getFieldCached(object.getClass(), field);
+			if (!checkFieldAccessLevel(f, object, fromClass)) {
+				return null;
+			}
+			if (f.isAnnotationPresent(Final.class)) {
+				this.addSystemLog(AILog.ERROR, Error.CANNOT_ASSIGN_FINAL_FIELD, new String[] { object.getClass().getName(), field });
+				return null;
+			}
+			var current = f.get(object);
+			var v = current != null ? current : value;
+			f.set(object, v);
+			return v;
+		} catch (IllegalArgumentException | IllegalAccessException | NoSuchFieldException | SecurityException e) {
+			addSystemLog(AILog.ERROR, e);
+		}
+		addSystemLog(AILog.ERROR, Error.UNKNOWN_FIELD, new Object[] { object, field });
+		return null;
+	}
+
 	public Object field_sub_eq(Object object, String field, Object value, ClassLeekValue fromClass) throws LeekRunException {
 		if (object instanceof ObjectLeekValue) {
 			return ((ObjectLeekValue) object).field_sub_eq(field, value);
@@ -2809,6 +2836,41 @@ public abstract class AI {
 		return null;
 	}
 
+	public Object put_coalesce_eq(Object array, Object key, Object value, ClassLeekValue fromClass) throws LeekRunException {
+		if (array instanceof LegacyArrayLeekValue) {
+			return ((LegacyArrayLeekValue) array).put_coalesce_eq(this, key, value);
+		}
+		if (array instanceof ArrayLeekValue) {
+			return ((ArrayLeekValue) array).put_coalesce_eq(this, key, value);
+		}
+		if (array instanceof MapLeekValue) {
+			return ((MapLeekValue) array).put_coalesce_eq(this, key, value);
+		}
+		if (array instanceof ObjectLeekValue) {
+			var field = string(key);
+			return ((ObjectLeekValue) array).field_coalesce_eq(field, value);
+		}
+		if (array instanceof ClassLeekValue) {
+			var field = string(key);
+			return ((ClassLeekValue) array).field_coalesce_eq(field, value);
+		}
+		if (array instanceof NativeObjectLeekValue) {
+			try {
+				var f = getWriteableField(array, string(key), fromClass);
+				if (f == null) return null;
+				var current = f.get(array);
+				var v = current != null ? current : value;
+				f.set(array, v);
+				return v;
+			} catch (IllegalArgumentException | IllegalAccessException | NoSuchFieldException | SecurityException e) {
+				addSystemLog(AILog.ERROR, e);
+			}
+		}
+		if (version >= 3)
+			addSystemLog(AILog.ERROR, Error.VALUE_IS_NOT_AN_ARRAY, new Object[] { array });
+		return null;
+	}
+
 	public Object set(Object variable, Object value) throws LeekRunException {
 		if (variable instanceof Box) {
 			return ((Box) variable).set(value);
@@ -2958,13 +3020,7 @@ public abstract class AI {
 	}
 
 	public static java.lang.reflect.Field getFieldCached(Class<?> clazz, String fieldName) throws NoSuchFieldException {
-		Map<String, Object> classCache = singleFieldCache.get(clazz);
-
-		if (classCache == null) {
-			// No cache for this class yet, create it
-			classCache = new HashMap<>();
-			singleFieldCache.put(clazz, classCache);
-		}
+		Map<String, Object> classCache = singleFieldCache.computeIfAbsent(clazz, k -> new java.util.concurrent.ConcurrentHashMap<>());
 
 		Object cached = classCache.get(fieldName);
 
@@ -3114,6 +3170,11 @@ public abstract class AI {
 		throw new ClassCastException();
 	}
 
+	public ArrayLeekValue toArrayOrNull(int index, Object value) throws LeekRunException {
+		if (value == null) return null;
+		return toArray(index, value);
+	}
+
 	public MapLeekValue toMap(int index, Object value) throws LeekRunException {
 		if (value instanceof MapLeekValue map) {
 			return map;
@@ -3125,6 +3186,11 @@ public abstract class AI {
 			Type.MAP.toString()
 		});
 		throw new ClassCastException();
+	}
+
+	public MapLeekValue toMapOrNull(int index, Object value) throws LeekRunException {
+		if (value == null) return null;
+		return toMap(index, value);
 	}
 
 	public FunctionLeekValue toFunction(int index, Object value) throws LeekRunException {
@@ -3151,6 +3217,11 @@ public abstract class AI {
 			Type.ARRAY.toString() + " (V1-3)"
 		});
 		return new LegacyArrayLeekValue(this);
+	}
+
+	public LegacyArrayLeekValue toLegacyArrayOrNull(int index, Object value) throws LeekRunException {
+		if (value == null) return null;
+		return toLegacyArray(index, value);
 	}
 
 	public static boolean verifyParameters(int[] types, Object... parameters) {

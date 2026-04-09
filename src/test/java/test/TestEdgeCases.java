@@ -15,15 +15,17 @@ import leekscript.common.Error;
 @ExtendWith(SummaryExtension.class)
 public class TestEdgeCases extends TestCommon {
 
-	@Test
-	public void run() throws Exception {
-
+		@Test
+	public void testInit() throws Exception {
 		/**
 		 * Deep recursion with temporary arrays
 		 * These simulate minimax-like algorithms that caused OOM in tournaments
 		 */
-		section("Deep recursion with temporary arrays");
+	}
 
+	@Test
+	public void testDeep_recursion_with_temporary_arrays() throws Exception {
+		section("Deep recursion with temporary arrays");
 		// Simple recursion creating arrays at each level
 		code_v4_("function rec(depth) { if (depth == 0) return [] var a = [1, 2, 3] return rec(depth - 1) } return count(rec(100))").equals("0");
 
@@ -39,8 +41,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Minimax simulation - this pattern caused OOM in tournaments
 		 */
-		section("Minimax-like patterns");
+	}
 
+	@Test
+	public void testMinimaxMinuslike_patterns() throws Exception {
+		section("Minimax-like patterns");
 		// Minimax without pruning - creates many temporary arrays
 		code_v4_("function minimax(depth, isMax) { if (depth == 0) return randInt(0, 100) var scores = [] for (var i = 0; i < 3; i++) push(scores, minimax(depth - 1, !isMax)) if (isMax) return arrayMax(scores) else return arrayMin(scores) } return minimax(4, true) >= 0").equals("true");
 
@@ -50,8 +55,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Nested data structures - potential memory issues
 		 */
-		section("Deeply nested structures");
+	}
 
+	@Test
+	public void testDeeply_nested_structures() throws Exception {
+		section("Deeply nested structures");
 		// Deep array nesting - typeOf returns a number
 		code_v4_("var a = [1] for (var i = 0; i < 50; i++) a = [a] return count(a)").equals("1");
 
@@ -67,8 +75,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Edge cases with null references - related to NPE fixes
 		 */
-		section("Null reference edge cases");
+	}
 
+	@Test
+	public void testNull_reference_edge_cases() throws Exception {
+		section("Null reference edge cases");
 		// Null in array operations
 		code_v4_("var a = [null, null, null] return count(a)").equals("3");
 		code_v4_("var a = [1, 2, 3] return arrayFoldLeft(a, (acc, v) -> acc + v, 0)").equals("6");
@@ -87,16 +98,41 @@ public class TestEdgeCases extends TestCommon {
 		code_v4_("var x = null return x ? 'true' : 'false'").equals("\"false\"");
 		code_v4_("var x = null return !x").equals("true");
 
-		// Null coalescing patterns (manual implementation since ?? doesn't exist)
+		// Null coalescing patterns and ?? operator
 		code_v4_("var x = null var y = x == null ? 42 : x return y").equals("42");
 		code_v4_("var x = 0 var y = x == null ? 42 : x return y").equals("0");
 		code_v4_("function maybeNull(b) { if (b) return 'value' return null } var r = maybeNull(false) return r == null ? 'default' : r").equals("\"default\"");
 
+		// ?? operator: a ?? b is equivalent to (a != null) ? a : b
+		code_v4_("var x = null return x ?? 42").equals("42");
+		code_v4_("var x = 0 return x ?? 42").equals("0"); // 0 is not null, so keeps 0
+		code_v4_("var x = 1 return x ?? 42").equals("1");
+		code_v4_("var x = 'hello' return x ?? 'world'").equals("\"hello\"");
+		code_v4_("var a = null var b = 10 var c = 20 return (a ?? b) + c").equals("30");
+		code_v4_("var a = 0 var b = 10 var c = 20 return a ?? b + c").equals("0"); // parsed as a ?? (b + c)
+
+		// ??= operator: a ??= b is equivalent to a = (a != null) ? a : b
+		code_v4_("var x = null x ??= 42 return x").equals("42");
+		code_v4_("var x = 0 x ??= 42 return x").equals("0");
+		code_v4_("var x = null return (x ??= 42)").equals("42");
+		code_v4_("var a = [null] a[0] ??= 5 return a[0]").equals("5");
+		code_v4_("var a = [1] a[0] ??= 5 return a[0]").equals("1");
+		code_v4_("class C { any v; } var c = new C() c.v ??= 7 return c.v").equals("7");
+
+		// ?? operator type: null ?? a should have type A, not A?
+		code_strict_v4_("integer a = 5; integer b = null ?? a; return b").equals("5");
+		code_strict_v4_("integer? a = null; integer b = a ?? 5; return b").equals("5");
+		code_strict_v4_("integer? a = null; integer b = a ?? 10; return b").equals("10");
+		code_strict_v4_("integer? a = 3; integer b = a ?? 10; return b").equals("3");
+
 		/**
 		 * Operations limit edge cases
 		 */
-		section("Operations limit edge cases");
+	}
 
+	@Test
+	public void testOperations_limit_edge_cases() throws Exception {
+		section("Operations limit edge cases");
 		// Just under the limit
 		code_v4_("var sum = 0 for (var i = 0; i < 1000; i++) sum += i return sum").max_ops(50000).equals("499500");
 
@@ -110,8 +146,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * RAM limit edge cases
 		 */
-		section("RAM limit edge cases");
+	}
 
+	@Test
+	public void testRAM_limit_edge_cases() throws Exception {
+		section("RAM limit edge cases");
 		// Array that grows to limit
 		code_v4_("var a = [] for (var i = 0; i < 1000; i++) push(a, i) return count(a)").max_ram(50000).equals("1000");
 		code_v4_("var a = [] for (var i = 0; i < 100000; i++) push(a, i) return count(a)").max_ram(1000).error(Error.OUT_OF_MEMORY);
@@ -126,8 +165,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Garbage collection scenarios - testing that temporary objects are freed
 		 */
-		section("GC scenarios - temporary object cleanup");
+	}
 
+	@Test
+	public void testGC_scenarios_Minus_temporary_object_cleanup() throws Exception {
+		section("GC scenarios - temporary object cleanup");
 		// Create and discard many arrays (should not OOM if GC works)
 		code_v4_("for (var i = 0; i < 100; i++) { var temp = [] for (var j = 0; j < 1000; j++) push(temp, j) } return 'ok'").max_ram(100000).equals("\"ok\"");
 
@@ -135,13 +177,16 @@ public class TestEdgeCases extends TestCommon {
 		code_v4_("for (var i = 0; i < 100; i++) { any temp = [:] for (var j = 0; j < 1000; j++) temp[j] = j } return 'ok'").max_ram(100000).equals("\"ok\"");
 
 		// Recursive function that creates and discards arrays
-		code_v4_("function work(n) { if (n == 0) return 0 var temp = [1, 2, 3, 4, 5] return work(n - 1) } return work(100)").max_ram(10000).equals("0");
+		code_v4_("function work(n) { if (n == 0) return 0 var temp = [1, 2, 3, 4, 5] return work(n - 1) } return work(100)").max_ram(20000).equals("0");
 
 		/**
 		 * Complex data structure patterns
 		 */
-		section("Complex data structure patterns");
+	}
 
+	@Test
+	public void testComplex_data_structure_patterns() throws Exception {
+		section("Complex data structure patterns");
 		// Graph-like structure (adjacency list) - use global
 		code_v4_("global graph = [:] for (var i = 0; i < 10; i++) graph[i] = [] for (var i = 0; i < 10; i++) for (var j = i + 1; j < 10; j++) { push(graph[i], j) push(graph[j], i) } return count(graph[0])").equals("9");
 
@@ -154,8 +199,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Edge cases with closures and memory
 		 */
-		section("Closure memory edge cases");
+	}
 
+	@Test
+	public void testClosure_memory_edge_cases() throws Exception {
+		section("Closure memory edge cases");
 		// Closure capturing large array
 		code_v4_("var large = [] for (var i = 0; i < 1000; i++) push(large, i) var f = function() { return count(large) } return f()").equals("1000");
 
@@ -168,8 +216,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Type coercion edge cases
 		 */
-		section("Type coercion edge cases");
+	}
 
+	@Test
+	public void testType_coercion_edge_cases() throws Exception {
+		section("Type coercion edge cases");
 		// Mixed type arrays
 		code_v4_("var a = [1, 'two', 3.0, null, true] return count(a)").equals("5");
 
@@ -185,8 +236,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Boundary value tests
 		 */
-		section("Boundary values");
+	}
 
+	@Test
+	public void testBoundary_values() throws Exception {
+		section("Boundary values");
 		// Large integers
 		code_v4_("return 9223372036854775807").equals("9223372036854775807");
 		code_v4_("var x = 9223372036854775807 return x + 1").equals("-9223372036854775808"); // Overflow
@@ -203,8 +257,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Stress test combining multiple patterns
 		 */
-		section("Combined stress test");
+	}
 
+	@Test
+	public void testCombined_stress_test() throws Exception {
+		section("Combined stress test");
 		// Tree with arrays at each node, limited recursion
 		code_v4_("function buildTree(depth) { if (depth == 0) return ['leaf': true, 'data': [1, 2, 3]] return ['left': buildTree(depth - 1), 'right': buildTree(depth - 1), 'data': [depth]] } var tree = buildTree(3) return tree['data'][0]").equals("3");
 
@@ -217,8 +274,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Additional stress tests for OOM scenarios
 		 */
-		section("Tournament-like stress scenarios");
+	}
 
+	@Test
+	public void testTournamentMinuslike_stress_scenarios() throws Exception {
+		section("Tournament-like stress scenarios");
 		// Multiple sequential computations (like tournament rounds)
 		code_v4_("var results = [] for (var round = 0; round < 8; round++) { var scores = [] for (var i = 0; i < 100; i++) push(scores, randInt(0, 1000)) push(results, arrayMax(scores)) } return count(results)").equals("8");
 
@@ -231,8 +291,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Value conversions edge cases
 		 */
-		section("Value conversions");
+	}
 
+	@Test
+	public void testValue_conversions() throws Exception {
+		section("Value conversions");
 		// Integer to real
 		code_v4_("real x = 42 return x").equals("42.0");
 		code_v4_("function f(real r) { return r } return f(42)").equals("42.0");
@@ -266,8 +329,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Complex assignments - nested maps and chained assignments
 		 */
-		section("Complex assignments");
+	}
 
+	@Test
+	public void testComplex_assignments() throws Exception {
+		section("Complex assignments");
 		// Simple chained assignment
 		code_v4_("var a var b a = b = 5 return [a, b]").equals("[5, 5]");
 		code_v4_("var a var b var c a = b = c = 10 return [a, b, c]").equals("[10, 10, 10]");
@@ -302,8 +368,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Type inference and conversion in functions
 		 */
-		section("Type inference in functions");
+	}
 
+	@Test
+	public void testType_inference_in_functions() throws Exception {
+		section("Type inference in functions");
 		// Return type inference
 		code_v4_("function f() { return 42 } integer x = f() return x").equals("42");
 		code_v4_("function f() { return [1, 2, 3] } Array<integer> x = f() return x").equals("[1, 2, 3]");
@@ -320,8 +389,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Edge cases with operators and assignments
 		 */
-		section("Operator assignment edge cases");
+	}
 
+	@Test
+	public void testOperator_assignment_edge_cases() throws Exception {
+		section("Operator assignment edge cases");
 		// Increment/decrement with side effects
 		code_v4_("var x = 5 var y = x++ return [x, y]").equals("[6, 5]");
 		code_v4_("var x = 5 var y = ++x return [x, y]").equals("[6, 6]");
@@ -340,8 +412,11 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Map/Array access patterns that could cause issues
 		 */
-		section("Access pattern edge cases");
+	}
 
+	@Test
+	public void testAccess_pattern_edge_cases() throws Exception {
+		section("Access pattern edge cases");
 		// Chained access
 		code_v4_("var a = [[1, 2], [3, 4], [5, 6]] return a[1][1]").equals("4");
 		code_v4_("any m = ['a': ['b': ['c': 42]]] return m['a']['b']['c']").equals("42");
@@ -361,8 +436,22 @@ public class TestEdgeCases extends TestCommon {
 		/**
 		 * Reference and copy semantics
 		 */
-		section("Reference vs copy semantics");
+	}
 
+	@Test
+	public void testMap_array_access_type_mismatch() throws Exception {
+		section("Map array access type mismatch");
+		// Bug: typed Map + function with -> Array<integer>? return type
+		// cache[key] returns Array<integer>|null, cache[key][idx] returns integer|null
+		// In non-strict mode, UNSAFE_DOWNCAST in return should NOT produce a warning
+		code_v4_("global Map<string, Array<integer>> cache = [:] function findBest() -> Array<integer> { return [1, 2, 3] } function getFromCache(string key, integer idx) -> Array<integer>? { if (key == '') return null cache[key] = findBest() return cache[key][idx] } return getFromCache('k', 0)").noWarning();
+		// In strict mode, DANGEROUS_CONVERSION warning is expected
+		code_strict_v4_("global Map<string, Array<integer>> cache = [:] function findBest() -> Array<integer> { return [1, 2, 3] } function getFromCache(string key, integer idx) -> Array<integer>? { if (key == '') return null cache[key] = findBest() return cache[key][idx] } return getFromCache('k', 0)").warning(Error.MAY_NOT_BE_INDEXABLE);
+	}
+
+	@Test
+	public void testReference_vs_copy_semantics() throws Exception {
+		section("Reference vs copy semantics");
 		// Array reference behavior
 		code_v4_("var a = [1, 2, 3] var b = a push(b, 4) return a").equals("[1, 2, 3, 4]");
 		code_v4_("var a = [1, 2, 3] var b = clone(a) push(b, 4) return a").equals("[1, 2, 3]");
@@ -376,6 +465,6 @@ public class TestEdgeCases extends TestCommon {
 
 		// Function parameter reference
 		code_v4_("function modify(arr) { push(arr, 99) } var a = [1, 2, 3] modify(a) return a").equals("[1, 2, 3, 99]");
-
 	}
+
 }

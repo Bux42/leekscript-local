@@ -1,6 +1,7 @@
 package leekscript.compiler.expression;
 
 import leekscript.compiler.AnalyzeError;
+import leekscript.compiler.NarrowingInfo;
 import leekscript.compiler.Token;
 import leekscript.compiler.JavaWriter;
 import leekscript.compiler.Location;
@@ -12,6 +13,7 @@ import leekscript.compiler.expression.LeekVariable.VariableType;
 import leekscript.runner.values.LeekValue;
 import leekscript.runner.values.LeekValueType;
 import leekscript.common.ArrayType;
+import leekscript.common.ClassType;
 import leekscript.common.ClassValueType;
 import leekscript.common.CompoundType;
 import leekscript.common.Error;
@@ -797,6 +799,23 @@ public class LeekExpression extends Expression {
 			}
 			if (parenthesis) writer.addCode(")");
 			return;
+		case Operators.COALESCE:
+			// a ?? b  ==  (a != null) ? a : b
+			if (!mExpression1.getType().canBeNull()) {
+				// a can never be null, so just return a
+				if (parenthesis) writer.addCode("(");
+				mExpression1.writeJavaCode(mainblock, writer, !(mExpression1 instanceof LeekExpression));
+				if (parenthesis) writer.addCode(")");
+				return;
+			}
+			if (parenthesis) writer.addCode("(");
+			writer.compileLoad(mainblock, mExpression1, true);
+			writer.addCode(" != null ? ");
+			mExpression1.writeJavaCode(mainblock, writer, true);
+			writer.addCode(" : ");
+			mExpression2.writeJavaCode(mainblock, writer, true);
+			if (parenthesis) writer.addCode(")");
+			return;
 		case Operators.XOR:
 			writer.addCode("xor(");
 			writer.getBoolean(mainblock, mExpression1, false);
@@ -872,6 +891,9 @@ public class LeekExpression extends Expression {
 				mExpression1.compileSetCopy(mainblock, writer, mExpression2, parenthesis);
 			}
 			return;
+		case Operators.COALESCE_ASSIGN:
+			mExpression1.compileCoalesceEq(mainblock, writer, mExpression2, parenthesis);
+			return;
 		case Operators.ADDASSIGN:
 			mExpression1.compileAddEq(mainblock, writer, mExpression2, type, parenthesis);
 			return;
@@ -924,15 +946,23 @@ public class LeekExpression extends Expression {
 			writer.addCode(")");
 			return;
 		case Operators.AS:
-			if (mExpression2 instanceof LeekType lt && lt.getType().accepts(mExpression1.getType()) != CastType.EQUALS) {
-				if (parenthesis) writer.addCode("(");
-				writer.addCode("(");
-				mExpression2.writeJavaCode(mainblock, writer, false);
-				writer.addCode(") ");
-			}
-			mExpression1.writeJavaCode(mainblock, writer, true);
-			if (mExpression2 instanceof LeekType lt && lt.getType().accepts(mExpression1.getType()) != CastType.EQUALS) {
-				if (parenthesis) writer.addCode(")");
+			// Always emit the cast in Java — narrowing may have made types match
+			// during analysis, but the generated Java code still needs the cast
+			if (mExpression2 instanceof LeekType lt) {
+				if (lt.type instanceof ClassType) {
+					// For class types, always emit explicit cast — narrowing can make
+					// compileConvert think the cast is unnecessary when it's not
+					if (parenthesis) writer.addCode("(");
+					writer.addCode("(");
+					mExpression2.writeJavaCode(mainblock, writer, false);
+					writer.addCode(") ");
+					mExpression1.writeJavaCode(mainblock, writer, true);
+					if (parenthesis) writer.addCode(")");
+				} else {
+					// For primitive types, use compileConvert which handles
+					// boxed-to-primitive conversions (e.g., Double → long)
+					writer.compileConvert(mainblock, 0, mExpression1, type, parenthesis);
+				}
 			}
 			return;
 		case Operators.IN:
@@ -958,9 +988,25 @@ public class LeekExpression extends Expression {
 
 	@Override
 	public boolean isLeftValue() {
-		// return mOperator == Operators.DOT;
-		// return false;
-		return mOperator == Operators.NON_NULL_ASSERTION;
+		return mOperator == Operators.NON_NULL_ASSERTION && mExpression2.isLeftValue();
+	}
+
+	@Override
+	public void compileSet(MainLeekBlock mainblock, JavaWriter writer, Expression expr, boolean parenthesis) {
+		if (mOperator == Operators.NON_NULL_ASSERTION) {
+			mExpression2.compileSet(mainblock, writer, expr, parenthesis);
+		} else {
+			super.compileSet(mainblock, writer, expr, parenthesis);
+		}
+	}
+
+	@Override
+	public void compileSetCopy(MainLeekBlock mainblock, JavaWriter writer, Expression expr, boolean parenthesis) {
+		if (mOperator == Operators.NON_NULL_ASSERTION) {
+			mExpression2.compileSetCopy(mainblock, writer, expr, parenthesis);
+		} else {
+			super.compileSetCopy(mainblock, writer, expr, parenthesis);
+		}
 	}
 
 	@Override
@@ -1002,11 +1048,28 @@ public class LeekExpression extends Expression {
 		}
 
 		if (mExpression1 != null) mExpression1.analyze(compiler);
-		if (mExpression2 != null) mExpression2.analyze(compiler);
+
+		// Short-circuit narrowing: for &&, apply true narrowings from e1 when analyzing e2
+		// e.g., x != null && x.toto() → x is non-null when evaluating x.toto()
+		if (mExpression2 != null) {
+			if (mOperator == Operators.AND && mExpression1 != null) {
+				var narrowing = NarrowingInfo.extract(mExpression1);
+				var saved = narrowing.applyTrue();
+				mExpression2.analyze(compiler);
+				NarrowingInfo.restore(saved);
+			} else if (mOperator == Operators.OR && mExpression1 != null) {
+				var narrowing = NarrowingInfo.extract(mExpression1);
+				var saved = narrowing.applyFalse();
+				mExpression2.analyze(compiler);
+				NarrowingInfo.restore(saved);
+			} else {
+				mExpression2.analyze(compiler);
+			}
+		}
 
 		// Si on a affaire à une assignation, incrémentation ou autre du genre
 		// on doit vérifier qu'on a bien une variable (l-value)
-		if (mOperator == Operators.ADDASSIGN || mOperator == Operators.MINUSASSIGN || mOperator == Operators.DIVIDEASSIGN || mOperator == Operators.ASSIGN || mOperator == Operators.MODULUSASSIGN || mOperator == Operators.MULTIPLIEASSIGN || mOperator == Operators.POWERASSIGN || mOperator == Operators.BITOR_ASSIGN || mOperator == Operators.BITAND_ASSIGN || mOperator == Operators.BITXOR_ASSIGN || mOperator == Operators.SHIFT_LEFT_ASSIGN || mOperator == Operators.SHIFT_RIGHT_ASSIGN || mOperator == Operators.SHIFT_UNSIGNED_RIGHT_ASSIGN) {
+		if (mOperator == Operators.ADDASSIGN || mOperator == Operators.MINUSASSIGN || mOperator == Operators.DIVIDEASSIGN || mOperator == Operators.ASSIGN || mOperator == Operators.MODULUSASSIGN || mOperator == Operators.MULTIPLIEASSIGN || mOperator == Operators.POWERASSIGN || mOperator == Operators.BITOR_ASSIGN || mOperator == Operators.BITAND_ASSIGN || mOperator == Operators.BITXOR_ASSIGN || mOperator == Operators.SHIFT_LEFT_ASSIGN || mOperator == Operators.SHIFT_RIGHT_ASSIGN || mOperator == Operators.SHIFT_UNSIGNED_RIGHT_ASSIGN || mOperator == Operators.COALESCE_ASSIGN) {
 			if (mExpression1.isFinal()) {
 				if (mExpression1 instanceof LeekObjectAccess) {
 					if (!compiler.isInConstructor()) {
@@ -1062,33 +1125,62 @@ public class LeekExpression extends Expression {
 			// if (variable1 != null && variable1 == variable2 && mExpression1 instanceof LeekVariable) {
 			// 	compiler.addError(new AnalyzeError(getLocation(), AnalyzeErrorLevel.WARNING, Error.ASSIGN_SAME_VARIABLE, new String[] { variable1.getName() } ));
 			// }
+
+			// After assignment, reset narrowed variable to its declared type
+			// so subsequent code doesn't use stale narrowing (e.g., w = null inside while (w != null))
+			if (variable1 != null && mExpression1 instanceof LeekVariable lv2) {
+				variable1.setType(variable1.getDeclaredType());
+			}
+			// Track assigned expression type for assignment narrowing detection
+			// (used by ConditionalBloc to detect patterns like: if (x == null) { x = nonNull })
+			if (variable1 != null) {
+				variable1.setLastAssignedType(mExpression2.getType());
+			}
 		}
 
 		// Type compatible ?
-		if (mOperator == Operators.ASSIGN || mOperator == Operators.ADDASSIGN || mOperator == Operators.MINUSASSIGN || mOperator == Operators.MULTIPLIEASSIGN || mOperator == Operators.DIVIDEASSIGN || mOperator == Operators.POWERASSIGN) {
+		if (mOperator == Operators.ASSIGN || mOperator == Operators.ADDASSIGN || mOperator == Operators.MINUSASSIGN || mOperator == Operators.MULTIPLIEASSIGN || mOperator == Operators.DIVIDEASSIGN || mOperator == Operators.POWERASSIGN || mOperator == Operators.COALESCE_ASSIGN) {
+
+			// Use declared type for assignment checks (not narrowed type)
+			var targetType = mExpression1.getType();
+			if (mExpression1 instanceof LeekVariable lv) {
+				var declVar = lv.getVariable();
+				if (declVar != null) {
+					targetType = declVar.getDeclaredType();
+				} else if (lv.getDeclaration() != null) {
+					targetType = lv.getDeclaration().getType();
+				}
+			} else if (mExpression1 instanceof LeekObjectAccess oa) {
+				// For property access (this.x, class.x), use declared type of the field
+				var fieldVar = oa.getVariable();
+				if (fieldVar != null) {
+					targetType = fieldVar.getDeclaredType();
+				}
+			}
 
 			var expressionType = mExpression2.getType();
-			if (mOperator == Operators.ADDASSIGN) expressionType = mExpression1.getType().add(mExpression2.getType());
-			if (mOperator == Operators.MINUSASSIGN) expressionType = mExpression1.getType().sub(mExpression2.getType());
-			if (mOperator == Operators.MULTIPLIEASSIGN) expressionType = mExpression1.getType().mul(mExpression2.getType());
-			if (mOperator == Operators.DIVIDEASSIGN) expressionType = mExpression1.getType().div(mExpression2.getType());
-			if (mOperator == Operators.POWERASSIGN) expressionType = mExpression1.getType().pow(mExpression2.getType());
+			if (mOperator == Operators.ADDASSIGN) expressionType = targetType.add(mExpression2.getType());
+			if (mOperator == Operators.MINUSASSIGN) expressionType = targetType.sub(mExpression2.getType());
+			if (mOperator == Operators.MULTIPLIEASSIGN) expressionType = targetType.mul(mExpression2.getType());
+			if (mOperator == Operators.DIVIDEASSIGN) expressionType = targetType.div(mExpression2.getType());
+			if (mOperator == Operators.POWERASSIGN) expressionType = targetType.pow(mExpression2.getType());
+			if (mOperator == Operators.COALESCE_ASSIGN) expressionType = Type.compound(mExpression1.getType(), mExpression2.getType());
 
-			var cast = mExpression1.getType().accepts(expressionType);
+			var cast = targetType.accepts(expressionType);
 			if (cast == CastType.INCOMPATIBLE) {
 				var level = compiler.getMainBlock().isStrict() ? AnalyzeErrorLevel.ERROR : AnalyzeErrorLevel.WARNING;
 				compiler.addError(new AnalyzeError(getLocation(), level, Error.ASSIGNMENT_INCOMPATIBLE_TYPE, new String[] {
 					mExpression2.toString(),
 					expressionType.toString(),
 					mExpression1.toString(),
-					mExpression1.getType().toString(),
+					targetType.toString(),
 				}));
 			} else if (compiler.getMainBlock().isStrict() && cast.ordinal() >= CastType.SAFE_DOWNCAST.ordinal()) {
 				compiler.addError(new AnalyzeError(getLocation(), AnalyzeErrorLevel.WARNING, Error.DANGEROUS_CONVERSION_VARIABLE, new String[] {
 					mExpression2.toString(),
 					expressionType.toString(),
 					mExpression1.toString(),
-					mExpression1.getType().toString(),
+					targetType.toString(),
 				}));
 			}
 		}
@@ -1172,6 +1264,20 @@ public class LeekExpression extends Expression {
 		}
 		else if (mOperator == Operators.BITAND || mOperator == Operators.BITNOT || mOperator == Operators.BITOR  || mOperator == Operators.BITXOR || mOperator == Operators.SHIFT_LEFT || mOperator == Operators.SHIFT_RIGHT || mOperator == Operators.SHIFT_UNSIGNED_RIGHT || mOperator == Operators.INTEGER_DIVISION) {
 			type = Type.INT;
+		}
+		else if (mOperator == Operators.COALESCE) {
+			var leftType = mExpression1.getType();
+			if (!leftType.canBeNull()) {
+				type = leftType;
+			} else if (leftType == Type.NULL) {
+				type = mExpression2.getType();
+			} else if (leftType instanceof CompoundType ct) {
+				type = Type.compound(ct.assertNotNull(), mExpression2.getType());
+			} else {
+				type = Type.compound(leftType, mExpression2.getType());
+			}
+		} else if (mOperator == Operators.COALESCE_ASSIGN) {
+			type = mExpression1.getType();
 		}
 		else if (mOperator == Operators.ADD) {
 			type = mExpression1.getType().add(mExpression2.getType());

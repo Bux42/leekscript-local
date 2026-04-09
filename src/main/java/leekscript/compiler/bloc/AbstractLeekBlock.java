@@ -2,6 +2,7 @@ package leekscript.compiler.bloc;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Map;
 
 import leekscript.compiler.Token;
 import leekscript.compiler.AnalyzeError;
@@ -13,6 +14,8 @@ import leekscript.compiler.expression.LeekVariable;
 import leekscript.compiler.instruction.LeekExpressionInstruction;
 import leekscript.compiler.instruction.LeekInstruction;
 import leekscript.common.Error;
+import leekscript.common.Type;
+import leekscript.compiler.NarrowingInfo;
 
 public abstract class AbstractLeekBlock extends LeekInstruction {
 
@@ -26,6 +29,7 @@ public abstract class AbstractLeekBlock extends LeekInstruction {
 	protected MainLeekBlock mMain = null;
 	protected int mEndInstruction = 0;
 	protected boolean full = false;
+	protected Map<String, Type> mNarrowedPropertyTypes = null;
 
 	public AbstractLeekBlock(AbstractLeekBlock parent, MainLeekBlock main) {
 		mParent = parent;
@@ -110,6 +114,19 @@ public abstract class AbstractLeekBlock extends LeekInstruction {
 
 	public void addVariable(LeekVariable variable) {
 		mVariables.put(variable.getName(), variable);
+	}
+
+	/**
+	 * Look up a narrowed property type (e.g. "x.field") in this block or parent blocks.
+	 * Used by LeekObjectAccess during type narrowing.
+	 */
+	public Type getNarrowedPropertyType(String key) {
+		if (mNarrowedPropertyTypes != null) {
+			var type = mNarrowedPropertyTypes.get(key);
+			if (type != null) return type;
+		}
+		if (mParent != null) return mParent.getNarrowedPropertyType(key);
+		return null;
 	}
 
 	public LeekInstruction lastInstruction() {
@@ -218,12 +235,50 @@ public abstract class AbstractLeekBlock extends LeekInstruction {
 	public void analyze(WordCompiler compiler) throws LeekCompilerException {
 		AbstractLeekBlock initialBlock = compiler.getCurrentBlock();
 		compiler.setCurrentBlock(this);
+
+		// Track narrowings to restore at end of block (from early returns)
+		var pendingRestores = new ArrayList<Map<LeekVariable, Type>>();
+
 		for (var instruction : mInstructions) {
-			// if (instruction instanceof LeekGlobalDeclarationInstruction) {
-			// 	continue; // Analysé avant
-			// }
 			instruction.analyze(compiler);
+
+			// Apply false narrowings after a conditional block (if without else):
+			// Case 2: body exits (return/break/continue) → inverse narrowings for subsequent code
+			// Case 7: body assigns non-null to null-checked variables → both branches guarantee non-null
+			if (instruction instanceof ConditionalBloc cb
+				&& cb.getParentCondition() == null  // First 'if' in chain (not else-if)
+				&& cb.getNarrowingInfo() != null
+				&& cb.getNarrowingInfo().hasFalse()
+				&& (cb.mEndInstruction != 0 || cb.isAssignmentSatisfiesFalse())) {
+				pendingRestores.add(cb.getNarrowingInfo().applyFalse());
+				// Case 7: also apply property narrowings for subsequent code
+				if (cb.mEndInstruction == 0) {
+					var falsePropertyNarrowings = cb.getNarrowingInfo().getFalsePropertyNarrowings();
+					if (!falsePropertyNarrowings.isEmpty()) {
+						if (mNarrowedPropertyTypes == null) mNarrowedPropertyTypes = new HashMap<>();
+						mNarrowedPropertyTypes.putAll(falsePropertyNarrowings);
+					}
+				}
+			}
 		}
+
+		// Restore all narrowings applied during this block
+		for (var saved : pendingRestores) {
+			NarrowingInfo.restore(saved);
+		}
+
+		// Check for unused variables (strict mode only)
+		if (mMain != null && mMain.isStrict()) {
+			for (var entry : mVariables.entrySet()) {
+				var v = entry.getValue();
+				if (v.getUsageCount() > 0) continue;
+				if (v.getName().startsWith("_")) continue;
+				var vt = v.getVariableType();
+				if (vt != LeekVariable.VariableType.LOCAL && vt != LeekVariable.VariableType.ARGUMENT) continue;
+				compiler.addError(new AnalyzeError(v.getToken(), AnalyzeErrorLevel.WARNING, Error.UNUSED_VARIABLE, new String[] { v.getName() }));
+			}
+		}
+
 		compiler.setCurrentBlock(initialBlock);
 	}
 

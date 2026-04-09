@@ -33,6 +33,9 @@ public class LeekVariable extends Expression {
 	private boolean box = false;
 	private boolean isFinal = false;
 	private LeekVariable variable;
+	private Type declaredType = null;
+	private Type lastAssignedType = null;
+	private int usageCount = 0;
 
 	public LeekVariable(Token token, VariableType type) {
 		this.token = token;
@@ -43,6 +46,7 @@ public class LeekVariable extends Expression {
 	public LeekVariable(Token token, VariableType variableType, Type type, boolean isFinal) {
 		this(token, variableType);
 		this.variableType = type;
+		this.declaredType = type;
 		this.isFinal = isFinal;
 	}
 
@@ -54,6 +58,7 @@ public class LeekVariable extends Expression {
 	public LeekVariable(WordCompiler compiler, Token token, VariableType variableType, Type type) {
 		this(token, variableType);
 		this.variableType = type;
+		this.declaredType = type;
 		this.box = compiler.getVersion() <= 1;
 	}
 
@@ -97,6 +102,18 @@ public class LeekVariable extends Expression {
 		return variableType;
 	}
 
+	/**
+	 * Returns the Java declaration type: the type used for the Java variable declaration.
+	 * For narrowed variables, this may differ from getType() (which returns the narrowed type).
+	 * This is needed during code generation to avoid calling methods that don't exist on Object.
+	 */
+	public Type getJavaDeclarationType() {
+		if (this.variable != null) {
+			return this.variable.getDeclaredType();
+		}
+		return variableType;
+	}
+
 	@Override
 	public String toString() {
 		return token.getWord();
@@ -132,6 +149,14 @@ public class LeekVariable extends Expression {
 		return token.getWord();
 	}
 
+	public void addUsage() {
+		usageCount++;
+	}
+
+	public int getUsageCount() {
+		return usageCount;
+	}
+
 	@Override
 	public void preAnalyze(WordCompiler compiler) throws LeekCompilerException {
 		if (this.type == VariableType.SUPER) {
@@ -148,6 +173,7 @@ public class LeekVariable extends Expression {
 			this.isFinal = v.isFinal();
 			this.box = v.box;
 			this.variable = v;
+			v.addUsage();
 			if (v.getDeclaration() != null && v.getDeclaration().getFunction() != compiler.getCurrentFunction()) {
 				v.getDeclaration().setCaptured();
 			}
@@ -217,6 +243,20 @@ public class LeekVariable extends Expression {
 	public LeekVariableDeclarationInstruction getDeclaration() {
 		return declaration;
 	}
+
+	/**
+	 * Returns the original declared type, unaffected by narrowing.
+	 * For local/argument variables: uses declaration.getType().
+	 * For field/static field variables: uses the stored declaredType.
+	 */
+	public Type getDeclaredType() {
+		if (declaration != null) return declaration.getType();
+		return declaredType != null ? declaredType : variableType;
+	}
+
+	public Type getLastAssignedType() { return lastAssignedType; }
+	public void setLastAssignedType(Type type) { this.lastAssignedType = type; }
+	public void clearLastAssignedType() { this.lastAssignedType = null; }
 
 	public FunctionBlock getFunctionDeclaration() {
 		return functionDeclaration;
@@ -309,11 +349,76 @@ public class LeekVariable extends Expression {
 			}
 		} else {
 			if (isWrapper() || isBox()) {
-				writer.addCode("u_" + token.getWord() + ".get()");
+				if (this.variable != null && needsNarrowingCast(mainblock.getVersion())) {
+					writer.addCode("((" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") u_" + token.getWord() + ".get())");
+				} else if (this.variable != null && needsPrimitiveNarrowingConversion(mainblock.getVersion())) {
+					if (this.variableType == Type.INT) {
+						writer.addCode("longint(u_" + token.getWord() + ".get())");
+					} else if (this.variableType == Type.REAL) {
+						writer.addCode("real(u_" + token.getWord() + ".get())");
+					} else {
+						writer.addCode("u_" + token.getWord() + ".get()");
+					}
+				} else {
+					writer.addCode("u_" + token.getWord() + ".get()");
+				}
 			} else {
-				writer.addCode("u_" + token.getWord());
+				// Check if the variable was narrowed during analysis: if the expression's type
+				// differs from the declaration variable's Java type, emit a cast so that
+				// methods like .get(), .doubleValue() work on the narrowed type.
+				if (this.variable != null && needsNarrowingCast(mainblock.getVersion())) {
+					writer.addCode("((" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") u_" + token.getWord() + ")");
+				} else if (this.variable != null && needsPrimitiveNarrowingConversion(mainblock.getVersion())) {
+					// Variable narrowed to a primitive type (e.g., Cell|integer → integer),
+					// but declared as Object in Java. Use safe conversion helpers.
+					if (this.variableType == Type.INT) {
+						writer.addCode("longint(u_" + token.getWord() + ")");
+					} else if (this.variableType == Type.REAL) {
+						writer.addCode("real(u_" + token.getWord() + ")");
+					} else {
+						writer.addCode("u_" + token.getWord());
+					}
+				} else {
+					writer.addCode("u_" + token.getWord());
+				}
 			}
 		}
+	}
+
+	/**
+	 * Returns true if this variable was narrowed during analysis and the Java
+	 * declaration type differs from the narrowed type. This means the narrowed
+	 * type cannot be used directly in Java code without a cast or safe helper.
+	 * For example: a variable declared as Map|integer (Object in Java) narrowed
+	 * to integer cannot be used in arithmetic without conversion.
+	 */
+	public boolean hasNarrowingMismatch(int version) {
+		if (this.variable == null || this.variableType == null) return false;
+		Type declType = this.variable.getType();
+		if (declType == this.variableType) return false;
+		String javaType = this.variableType.getJavaPrimitiveName(version);
+		String javaDeclType = declType.getJavaPrimitiveName(version);
+		return !javaType.equals(javaDeclType);
+	}
+
+	/**
+	 * Check if this variable reference needs a narrowing cast in Java code.
+	 * Only for non-primitive narrowed types (e.g., Map, Array) where a Java
+	 * cast like ((MapLSClass) u_var) is valid. For primitive narrowed types
+	 * (e.g., integer → long), the caller must use a safe helper instead.
+	 */
+	private boolean needsNarrowingCast(int version) {
+		return hasNarrowingMismatch(version) && !this.variableType.isPrimitive();
+	}
+
+	/**
+	 * Check if this variable reference needs a primitive narrowing conversion.
+	 * For primitive narrowed types (e.g., Cell|integer narrowed to integer),
+	 * a Java cast is not valid (can't cast Object to long), so we need
+	 * safe conversion helpers like longint() or real().
+	 */
+	private boolean needsPrimitiveNarrowingConversion(int version) {
+		return hasNarrowingMismatch(version) && this.variableType.isPrimitive();
 	}
 
 	@Override
@@ -381,7 +486,8 @@ public class LeekVariable extends Expression {
 		if (type == VariableType.FIELD) {
 			if (parenthesis) writer.addCode("(");
 			writer.addCode(token.getWord() + " = ");
-			writer.compileConvert(mainblock, 0, expr, variableType, false);
+			var fieldType = (variable != null) ? variable.getDeclaredType() : variableType;
+			writer.compileConvert(mainblock, 0, expr, fieldType, false);
 			if (parenthesis) writer.addCode(")");
 		} else if (type == VariableType.STATIC_FIELD) {
 			writer.addCode(mainblock.getWordCompiler().getCurrentClassVariable() + ".setField(\"" + token.getWord() + "\", ");
@@ -403,6 +509,8 @@ public class LeekVariable extends Expression {
 				writer.addCode(")");
 			}
 		} else {
+			// Use declared type for assignments (not narrowed type)
+			var assignType = (this.declaration != null) ? this.declaration.getType() : this.variableType;
 			if (isWrapper()) {
 				if (expr.isLeftValue()) {
 					if (mainblock.getWordCompiler().getVersion() <= 1) {
@@ -419,12 +527,12 @@ public class LeekVariable extends Expression {
 				}
 			} else if (isBox()) {
 				writer.addCode("u_" + token.getWord() + ".set(");
-				writer.compileConvert(mainblock, 0, expr, this.variableType, false);
+				writer.compileConvert(mainblock, 0, expr, assignType, false);
 				writer.addCode(")");
 			} else {
 				if (parenthesis) writer.addCode("(");
 				writer.addCode("u_" + token.getWord() + " = ");
-				writer.compileConvert(mainblock, 0, expr, this.variableType, false);
+				writer.compileConvert(mainblock, 0, expr, assignType, false);
 				if (parenthesis) writer.addCode(")");
 			}
 		}
@@ -603,14 +711,18 @@ public class LeekVariable extends Expression {
 				writer.addCode("g_" + token.getWord() + ".add_eq(");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
-			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber()) {
+			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber() && !hasNarrowingMismatch(mainblock.getVersion()) && !(expr instanceof LeekVariable lve && lve.hasNarrowingMismatch(mainblock.getVersion()))) {
 				if (parenthesis) writer.addCode("(");
 				writer.addCode("g_" + token.getWord() + " += ");
 				expr.writeJavaCode(mainblock, writer, false);
 				if (parenthesis) writer.addCode(")");
 			} else {
 				if (parenthesis) writer.addCode("(");
-				writer.addCode("g_" + token.getWord() + " = add(g_" + token.getWord() + ", ");
+				writer.addCode("g_" + token.getWord() + " = ");
+				if (this.variableType != Type.ANY) {
+					writer.addCode("(" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
+				}
+				writer.addCode("add(g_" + token.getWord() + ", ");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
 				if (parenthesis) writer.addCode(")");
@@ -620,7 +732,7 @@ public class LeekVariable extends Expression {
 				writer.addCode("u_" + token.getWord() + ".add_eq(");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
-			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber()) {
+			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber() && !hasNarrowingMismatch(mainblock.getVersion()) && !(expr instanceof LeekVariable lve && lve.hasNarrowingMismatch(mainblock.getVersion()))) {
 				if (parenthesis) writer.addCode("(");
 				writer.addCode("u_" + token.getWord() + " += ");
 				expr.writeJavaCode(mainblock, writer, false);
@@ -660,14 +772,18 @@ public class LeekVariable extends Expression {
 				writer.addCode("g_" + token.getWord() + ".sub_eq(");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
-			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber()) {
+			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber() && !hasNarrowingMismatch(mainblock.getVersion()) && !(expr instanceof LeekVariable lve && lve.hasNarrowingMismatch(mainblock.getVersion()))) {
 				if (parenthesis) writer.addCode("(");
 				writer.addCode("g_" + token.getWord() + " -= ");
 				expr.writeJavaCode(mainblock, writer, false);
 				if (parenthesis) writer.addCode(")");
 			} else {
 				if (parenthesis) writer.addCode("(");
-				writer.addCode("g_" + token.getWord() + " = sub(g_" + token.getWord() + ", ");
+				writer.addCode("g_" + token.getWord() + " = ");
+				if (this.variableType != Type.ANY) {
+					writer.addCode("(" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
+				}
+				writer.addCode("sub(g_" + token.getWord() + ", ");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
 				if (parenthesis) writer.addCode(")");
@@ -677,7 +793,7 @@ public class LeekVariable extends Expression {
 				writer.addCode("u_" + token.getWord() + ".sub_eq(");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
-			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber()) {
+			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber() && !hasNarrowingMismatch(mainblock.getVersion()) && !(expr instanceof LeekVariable lve && lve.hasNarrowingMismatch(mainblock.getVersion()))) {
 				if (parenthesis) writer.addCode("(");
 				writer.addCode("u_" + token.getWord() + " -= ");
 				expr.writeJavaCode(mainblock, writer, false);
@@ -713,14 +829,18 @@ public class LeekVariable extends Expression {
 				writer.addCode("g_" + token.getWord() + ".mul_eq(");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
-			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber()) {
+			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber() && !hasNarrowingMismatch(mainblock.getVersion()) && !(expr instanceof LeekVariable lve && lve.hasNarrowingMismatch(mainblock.getVersion()))) {
 				if (parenthesis) writer.addCode("(");
 				writer.addCode("g_" + token.getWord() + " *= ");
 				expr.writeJavaCode(mainblock, writer, false);
 				if (parenthesis) writer.addCode(")");
 			} else {
 				if (parenthesis) writer.addCode("(");
-				writer.addCode("g_" + token.getWord() + " = mul(g_" + token.getWord() + ", ");
+				writer.addCode("g_" + token.getWord() + " = ");
+				if (this.variableType != Type.ANY) {
+					writer.addCode("(" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
+				}
+				writer.addCode("mul(g_" + token.getWord() + ", ");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
 				if (parenthesis) writer.addCode(")");
@@ -730,7 +850,7 @@ public class LeekVariable extends Expression {
 				writer.addCode("u_" + token.getWord() + ".mul_eq(");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
-			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber()) {
+			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber() && !hasNarrowingMismatch(mainblock.getVersion()) && !(expr instanceof LeekVariable lve && lve.hasNarrowingMismatch(mainblock.getVersion()))) {
 			if (parenthesis) writer.addCode("(");
 				writer.addCode("u_" + token.getWord() + " *= ");
 				expr.writeJavaCode(mainblock, writer, false);
@@ -768,11 +888,15 @@ public class LeekVariable extends Expression {
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
 			} else {
-			if (parenthesis) writer.addCode("(");
-				writer.addCode("g_" + token.getWord() + " = pow(g_" + token.getWord() + ", ");
+				if (parenthesis) writer.addCode("(");
+				writer.addCode("g_" + token.getWord() + " = ");
+				if (this.variableType != Type.ANY) {
+					writer.addCode("(" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
+				}
+				writer.addCode("pow(g_" + token.getWord() + ", ");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
-			if (parenthesis) writer.addCode(")");
+				if (parenthesis) writer.addCode(")");
 			}
 		} else {
 			if (isBox()) {
@@ -816,10 +940,14 @@ public class LeekVariable extends Expression {
 				writer.addCode(")");
 			} else {
 				if (parenthesis) writer.addCode("(");
+				writer.addCode("g_" + token.getWord() + " = ");
+				if (this.variableType != Type.ANY) {
+					writer.addCode("(" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
+				}
 				if (mainblock.getVersion() == 1) {
-					writer.addCode("g_" + token.getWord() + " = div_v1(g_" + token.getWord() + ", ");
+					writer.addCode("div_v1(g_" + token.getWord() + ", ");
 				} else {
-					writer.addCode("g_" + token.getWord() + " = div(g_" + token.getWord() + ", ");
+					writer.addCode("div(g_" + token.getWord() + ", ");
 				}
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
@@ -910,14 +1038,18 @@ public class LeekVariable extends Expression {
 				writer.addCode("g_" + token.getWord() + ".mod_eq(");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
-			} else if (this.variableType.isPrimitiveNumber()) {
+			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber()) {
 				if (parenthesis) writer.addCode("(");
 				writer.addCode("g_" + token.getWord() + " %= ");
 				expr.writeJavaCode(mainblock, writer, false);
 				if (parenthesis) writer.addCode(")");
 			} else {
 				if (parenthesis) writer.addCode("(");
-				writer.addCode("g_" + token.getWord() + " = mod(g_" + token.getWord() + ", ");
+				writer.addCode("g_" + token.getWord() + " = ");
+				if (this.variableType != Type.ANY) {
+					writer.addCode("(" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
+				}
+				writer.addCode("mod(g_" + token.getWord() + ", ");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
 				if (parenthesis) writer.addCode(")");
@@ -927,14 +1059,18 @@ public class LeekVariable extends Expression {
 				writer.addCode("u_" + token.getWord() + ".mod_eq(");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
-			} else if (this.variableType.isPrimitiveNumber()) {
+			} else if (this.variableType.isPrimitiveNumber() && expr.getType().isPrimitiveNumber()) {
 				if (parenthesis) writer.addCode("(");
 				writer.addCode("u_" + token.getWord() + " %= ");
 				expr.writeJavaCode(mainblock, writer, false);
 				if (parenthesis) writer.addCode(")");
 			} else {
 				if (parenthesis) writer.addCode("(");
-				writer.addCode("u_" + token.getWord() + " = mod(u_" + token.getWord() + ", ");
+				writer.addCode("u_" + token.getWord() + " = ");
+				if (this.variableType != Type.ANY) {
+					writer.addCode("(" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
+				}
+				writer.addCode("mod(u_" + token.getWord() + ", ");
 				expr.writeJavaCode(mainblock, writer, false);
 				writer.addCode(")");
 				if (parenthesis) writer.addCode(")");
@@ -1239,6 +1375,49 @@ public class LeekVariable extends Expression {
 				if (parenthesis) writer.addCode(")");
 			}
 		}
+	}
+
+	@Override
+	public void compileCoalesceEq(MainLeekBlock mainblock, JavaWriter writer, Expression expr, boolean parenthesis) {
+		// a ??= b  =>  a = (a != null) ? a : b
+		if (type == VariableType.GLOBAL || type == VariableType.LOCAL) {
+			if (isBox()) {
+				// Box-based variable: use Box.coalesce_eq
+				if (type == VariableType.GLOBAL) {
+					writer.addCode("g_" + token.getWord() + ".coalesce_eq(");
+					expr.writeJavaCode(mainblock, writer, false);
+					writer.addCode(")");
+				} else {
+					writer.addCode("u_" + token.getWord() + ".coalesce_eq(");
+					expr.writeJavaCode(mainblock, writer, false);
+					writer.addCode(")");
+				}
+				return;
+			}
+		}
+
+		// Fallback: explicit ternary assignment on the underlying storage
+		String varName;
+		if (type == VariableType.FIELD) {
+			varName = token.getWord();
+		} else if (type == VariableType.STATIC_FIELD) {
+			varName = mainblock.getWordCompiler().getCurrentClassVariable() + "." + token.getWord();
+		} else if (type == VariableType.GLOBAL) {
+			varName = "g_" + token.getWord();
+		} else {
+			// LOCAL or others
+			varName = "u_" + token.getWord();
+		}
+
+		if (parenthesis) writer.addCode("(");
+		writer.addCode(varName + " = ");
+		if (this.variableType != Type.ANY) {
+			writer.addCode("(" + this.variableType.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
+		}
+		writer.addCode("(" + varName + " != null ? " + varName + " : ");
+		expr.writeJavaCode(mainblock, writer, false);
+		writer.addCode(")");
+		if (parenthesis) writer.addCode(")");
 	}
 
 	@Override

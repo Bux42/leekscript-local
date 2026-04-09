@@ -130,7 +130,7 @@ function add(a: integer, b: integer): integer {
 
 ### Build le JAR
 ```bash
-cd /home/pierre/dev/leek-wars/generator/leekscript
+cd leek-wars/generator/leekscript
 gradle clean jar
 # Produit: leekscript.jar
 ```
@@ -142,7 +142,11 @@ java -jar leekscript.jar fichier.leek
 
 ### Lancer les tests
 ```bash
+# IMPORTANT : toujours depuis le dossier leekscript, pas le dossier generator parent
+cd leek-wars/generator/leekscript
 gradle test
+# Un seul test :
+gradle test --tests "test.TestClass"
 ```
 
 ### Tests existants
