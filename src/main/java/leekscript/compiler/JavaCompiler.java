@@ -9,6 +9,7 @@ import java.lang.ref.SoftReference;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -349,7 +350,7 @@ public class JavaCompiler {
 			return false;
 		}
 		try {
-			return java.nio.file.Files.readString(java.toPath()).contains("getLeekScriptGeneratedCodeVersion() { return 2; }");
+			return Files.readString(java.toPath()).contains("getLeekScriptGeneratedCodeVersion() { return 2; }");
 		} catch (IOException e) {
 			return false;
 		}
