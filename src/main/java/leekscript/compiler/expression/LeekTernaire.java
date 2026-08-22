@@ -178,8 +178,7 @@ public class LeekTernaire extends LeekExpression {
 	private void writeBranch(MainLeekBlock mainblock, JavaWriter writer, Expression branch) {
 		boolean counted = counted(branch);
 		if (counted) {
-			// Un ternaire gardé en Object n'a pas de cast (cf javaType) : un ops() sans surcharge
-			writer.addCode(branch.trim() instanceof LeekTernaire nested && nested.hasObjectJavaResult() ? "opsAny(" : "ops(");
+			writer.addCode(writer.profilerOperationStart(getLocation()));
 			if (JavaWriter.keepsBoxed(branch, type)) {
 				writer.addCode("(" + type.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
 			}

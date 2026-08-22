@@ -28,6 +28,8 @@ public class JavaWriter {
 	private final TreeMap<Integer, LineMapping> mLines = new TreeMap<>();
 	private final HashMap<AIFile, Integer> mFiles = new HashMap<>();
 	private final ArrayList<AIFile> mFilesList = new ArrayList<>();
+	private AIFile profilerFile;
+	private int profilerLine;
 	private final boolean mWithDebug;
 	private final String className;
 	public AbstractLeekBlock currentBlock = null;
@@ -55,6 +57,7 @@ public class JavaWriter {
 	}
 
 	public void addLine(String datas, int line, AIFile ai) {
+		setProfilerLocation(ai, line);
 		mCode.append(datas).append("\n");
 		int fileIndex = getFileIndex(ai);
 		mLines.put(mLine, new LineMapping(line, fileIndex));
@@ -62,6 +65,7 @@ public class JavaWriter {
 	}
 
 	public void addLine(String datas, Location location) {
+		setProfilerLocation(location.getFile(), location.getStartLine());
 		mCode.append(datas).append("\n");
 		int fileIndex = getFileIndex(location.getFile());
 		mLines.put(mLine, new LineMapping(location.getStartLine(), fileIndex));
@@ -89,6 +93,41 @@ public class JavaWriter {
 
 	public void addCode(String datas) {
 		mCode.append(datas);
+	}
+
+	public void addProfilerEnter(String name, Location location) {
+		addProfilerEnter(name, location.getFile().getPath(), location.getStartLine());
+	}
+
+	public void addProfilerEnter(String name, String file, int line) {
+		addLine(getAIThis() + ".profilerEnter(" + Json.toJson(name) + ", " + Json.toJson(file) + ", " + line + ");");
+	}
+
+	public void addProfilerExit() {
+		addLine(getAIThis() + ".profilerExit();");
+	}
+
+	private void setProfilerLocation(AIFile file, int line) {
+		profilerFile = file;
+		profilerLine = line;
+	}
+
+	public String profilerOperationStart(Location location) {
+		if (location != null) {
+			return "opsProfile(" + profilerLocation(location.getFile(), location.getStartLine()) + ", ";
+		}
+		if (profilerFile != null) {
+			return "opsProfile(" + profilerLocation(profilerFile, profilerLine) + ", ";
+		}
+		return "ops(";
+	}
+
+	public String profilerOperation(int operations, Location location) {
+		return profilerOperationStart(location) + operations + ")";
+	}
+
+	private String profilerLocation(AIFile file, int line) {
+		return getAIThis() + ".profilerLocation(" + Json.toJson(file.getPath()) + ", " + line + ")";
 	}
 
 	public AICode getCode() {
@@ -120,6 +159,7 @@ public class JavaWriter {
 			mCode.append(", ");
 		}
 		mCode.append("};}\n\n");
+		mCode.append("protected int getLeekScriptGeneratedCodeVersion() { return 2; }\n");
 	}
 
 	/**
@@ -146,7 +186,7 @@ public class JavaWriter {
 
 	public void addCounter(int count) {
 		if (operationsEnabled) {
-			addCode("ops(" + count + ");");
+			addCode(profilerOperation(count, null) + ";");
 		}
 	}
 
@@ -155,6 +195,7 @@ public class JavaWriter {
 	}
 
 	public void addPosition(Token token) {
+		setProfilerLocation(token.getLocation().getFile(), token.getLocation().getStartLine());
 		var index = getFileIndex(token.getLocation().getFile());
 		mLines.put(mLine, new LineMapping(token.getLocation().getStartLine(), index));
 	}
@@ -757,7 +798,7 @@ public class JavaWriter {
 		for (var function : anonymousSystemFunctions) {
 			addLine("private FunctionLeekValue " + function.getStandardClass() + "_" + function.getName() + " = new FunctionLeekValue(" + function.getVersions()[0].arguments.length + ", \"#Function " + function.getName() + "\") { public Object run(AI ai, Object thiz, Object... values) throws LeekRunException {");
 			if (operationsEnabled && function.getOperations() >= 0) {
-				addLine("ops(" + function.getOperations() + ");");
+				addLine(profilerOperation(function.getOperations(), null) + ";");
 			}
 			if (function.getVersions().length > 1) {
 				for (var version : function.getVersions()) {

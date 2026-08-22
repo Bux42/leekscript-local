@@ -942,7 +942,7 @@ public class LeekExpression extends Expression {
 		case Operators.AND:
 			if (parenthesis) writer.addCode("(");
 			if (writer.isOperationsEnabled()) {
-				writer.addCode("ops(");
+				writer.addCode(writer.profilerOperationStart(getLocation()));
 			}
 			writer.getBoolean(mainblock, mExpression1, !writer.isOperationsEnabled());
 			if (writer.isOperationsEnabled()) {
@@ -950,7 +950,7 @@ public class LeekExpression extends Expression {
 			}
 			writer.addCode(" && ");
 			if (writer.isOperationsEnabled() && mExpression2.operations > 0) {
-				writer.addCode("ops(");
+				writer.addCode(writer.profilerOperationStart(getLocation()));
 			}
 			writer.getBoolean(mainblock, mExpression2, !writer.isOperationsEnabled());
 			if (writer.isOperationsEnabled() && mExpression2.operations > 0) {
@@ -961,7 +961,7 @@ public class LeekExpression extends Expression {
 		case Operators.OR:
 			if (parenthesis) writer.addCode("(");
 			if (writer.isOperationsEnabled()) {
-				writer.addCode("ops(");
+				writer.addCode(writer.profilerOperationStart(getLocation()));
 			}
 			writer.getBoolean(mainblock, mExpression1, !writer.isOperationsEnabled());
 			if (writer.isOperationsEnabled()) {
@@ -969,7 +969,7 @@ public class LeekExpression extends Expression {
 			}
 			writer.addCode(" || ");
 			if (writer.isOperationsEnabled() && mExpression2.operations > 0) {
-				writer.addCode("ops(");
+				writer.addCode(writer.profilerOperationStart(getLocation()));
 			}
 			writer.getBoolean(mainblock, mExpression2, !writer.isOperationsEnabled());
 			if (writer.isOperationsEnabled() && mExpression2.operations > 0) {

@@ -458,7 +458,7 @@ public class SwitchBlock extends AbstractLeekBlock {
 					ops += 1 + v.getOperations();
 				}
 				if (writer.isOperationsEnabled() && ops > 0) {
-					writer.addCode("ops(");
+					writer.addCode(writer.profilerOperationStart(getLocation()));
 				}
 				boolean firstValue = true;
 				for (var v : c.values) {

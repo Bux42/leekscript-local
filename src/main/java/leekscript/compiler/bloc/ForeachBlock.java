@@ -178,7 +178,7 @@ public class ForeachBlock extends AbstractLeekBlock {
 		String iterJavaType = iteratorVariable != null ? iteratorVariable.getType().getJavaName(mainblock.getVersion()) : "Object";
 
 		// Container
-		writer.addCode("final var " + ar + " = ops(");
+		writer.addCode("final var " + ar + " = " + writer.profilerOperationStart(getLocation()));
 		if (mainblock.getVersion() >= 2) {
 			mArray.writeJavaCode(mainblock, writer, false);
 		} else {

@@ -245,7 +245,7 @@ public class ConditionalBloc extends AbstractLeekBlock {
 			return;
 		}
 		if (writer.isOperationsEnabled() && mCondition.getOperations() > 0) {
-			writer.addCode("ops(");
+			writer.addCode(writer.profilerOperationStart(getLocation()));
 		}
 		writer.getBoolean(mainblock, mCondition, false);
 		if (writer.isOperationsEnabled() && mCondition.getOperations() > 0) {

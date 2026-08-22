@@ -176,7 +176,7 @@ public class ForeachKeyBlock extends AbstractLeekBlock {
 		var iteratorKeyVariable = mainblock.getWordCompiler().getCurrentBlock().getVariable(mKeyIterator.getWord(), false);
 
 		// Container
-		writer.addCode("final var " + ar + " = ops(");
+		writer.addCode("final var " + ar + " = " + writer.profilerOperationStart(getLocation()));
 		if (mainblock.getVersion() >= 2) {
 			mArray.writeJavaCode(mainblock, writer, false);
 		} else {
@@ -193,7 +193,7 @@ public class ForeachKeyBlock extends AbstractLeekBlock {
 			} else if (mainblock.getVersion() <= 1) {
 				sb.append("var " + key_iterator + " = new Box(" + writer.getAIThis() + ", null);");
 			} else {
-				sb.append(iteratorKeyDeclaration.getIteratorJavaName(mainblock.getVersion()) + " ").append(key_iterator).append(" = null; ops(1); ");
+				sb.append(iteratorKeyDeclaration.getIteratorJavaName(mainblock.getVersion()) + " ").append(key_iterator).append(" = null; ").append(writer.profilerOperation(1, getLocation())).append("; ");
 			}
 		}
 		// Valeur
@@ -201,7 +201,7 @@ public class ForeachKeyBlock extends AbstractLeekBlock {
 			if (iteratorVariable != null && iteratorVariable.getDeclaration() != null && iteratorVariable.getDeclaration().isCaptured()) {
 				sb.append("final Wrapper<" + iteratorDeclaration.getVariable().getType().getJavaName(mainblock.getVersion()) + "> " + val_iterator + " = new Wrapper<" + iteratorDeclaration.getVariable().getType().getJavaName(mainblock.getVersion()) + ">(new Box(" + writer.getAIThis() + ", null));");
 			} else if (mainblock.getVersion() >= 2) {
-				sb.append(iteratorDeclaration.getIteratorJavaName(mainblock.getVersion()) + " " + val_iterator + " = null; ops(1);");
+				sb.append(iteratorDeclaration.getIteratorJavaName(mainblock.getVersion()) + " " + val_iterator + " = null; ").append(writer.profilerOperation(1, getLocation())).append(";");
 			} else {
 				sb.append("var " + val_iterator + " = new Box(" + writer.getAIThis() + ", null);");
 			}
@@ -227,11 +227,11 @@ public class ForeachKeyBlock extends AbstractLeekBlock {
 			}
 		} else {
 			if (iteratorKeyVariable != null && iteratorKeyVariable.getDeclaration() != null && iteratorKeyVariable.getDeclaration().isCaptured()) {
-				sb.append(key_iterator).append(".set(").append(var).append(".getKey()); ops(1); ");
+				sb.append(key_iterator).append(".set(").append(var).append(".getKey()); ").append(writer.profilerOperation(1, getLocation())).append("; ");
 			} else if (mKeyReference) {
 				sb.append(key_iterator).append(".set(").append(var).append(".getKey()); ");
 			} else {
-				sb.append(key_iterator).append(".set(").append(var).append(".getKey()); ops(1); ");
+				sb.append(key_iterator).append(".set(").append(var).append(".getKey()); ").append(writer.profilerOperation(1, getLocation())).append("; ");
 			}
 		}
 		// Maj de la valeur
@@ -251,9 +251,9 @@ public class ForeachKeyBlock extends AbstractLeekBlock {
 			if (mValueReference) {
 				sb.append(val_iterator).append(".set(").append(var).append(".getValue());");
 			} else if (iteratorVariable != null && iteratorVariable.getDeclaration() != null && iteratorVariable.getDeclaration().isCaptured()) {
-				sb.append(val_iterator).append(".set(").append(var).append(".getValue()); ops(1);");
+				sb.append(val_iterator).append(".set(").append(var).append(".getValue()); ").append(writer.profilerOperation(1, getLocation())).append(";");
 			} else {
-				sb.append(val_iterator).append(".set(").append(var).append(".getValue()); ops(1);");
+				sb.append(val_iterator).append(".set(").append(var).append(".getValue()); ").append(writer.profilerOperation(1, getLocation())).append(";");
 			}
 		}
 

@@ -207,6 +207,10 @@ public class ClassDeclarationInstruction extends LeekInstruction implements leek
 		return typeParameters != null;
 	}
 
+	public String getProfilerName() {
+		return parent == null ? getName() : parent.getProfilerName() + "." + getName();
+	}
+
 	@Override
 	public String getCode() {
 		String r = "class " + token.getWord();
@@ -831,6 +835,10 @@ public class ClassDeclarationInstruction extends LeekInstruction implements leek
 				}
 			}
 			writer.addLine(") throws LeekRunException {");
+			if (block != null) {
+				writer.addProfilerEnter(getProfilerName() + "." + block.getName(), block.getLocation());
+				writer.addLine("try {");
+			}
 
 			if (parent != null && !parent.internal) {
 				writer.addLine("super.init();");
@@ -879,6 +887,11 @@ public class ClassDeclarationInstruction extends LeekInstruction implements leek
 			} else {
 				writer.addLine("return null;");
 			}
+			if (block != null) {
+				writer.addLine("} finally {");
+				writer.addProfilerExit();
+				writer.addLine("}");
+			}
 			writer.addLine("}");
 
 			writer.currentBlock = null;
@@ -908,6 +921,8 @@ public class ClassDeclarationInstruction extends LeekInstruction implements leek
 					writer.addCode(" " + letter + "_" + arg.getToken());
 				}
 				writer.addLine(") throws LeekRunException {");
+				writer.addProfilerEnter(getProfilerName() + "." + block.getName(), block.getLocation());
+				writer.addLine("try {");
 				if (parent != null) {
 					// writer.addLine("final var u_super = u_" + parent.token.getWord() + ";");
 				}
@@ -955,6 +970,9 @@ public class ClassDeclarationInstruction extends LeekInstruction implements leek
 				} else {
 					version.getValue().block.writeJavaCode(mainblock, writer, false);
 				}
+				writer.addLine("} finally {");
+				writer.addProfilerExit();
+				writer.addLine("}");
 				writer.addLine("}");
 				writer.currentBlock = null;
 				mainblock.getWordCompiler().setCurrentBlock(null);
@@ -989,6 +1007,8 @@ public class ClassDeclarationInstruction extends LeekInstruction implements leek
 					writer.addCode(" " + letter + "_" + arg.getToken());
 				}
 				writer.addLine(") throws LeekRunException {");
+				writer.addProfilerEnter(getProfilerName() + "." + block.getName(), block.getLocation());
+				writer.addLine("try {");
 				if (parent != null) {
 					// writer.addLine("final var u_super = u_" + parent.token.getWord() + ";");
 				}
@@ -1037,6 +1057,9 @@ public class ClassDeclarationInstruction extends LeekInstruction implements leek
 					// Version complète
 					version.getValue().block.writeJavaCode(mainblock, writer, false);
 				}
+				writer.addLine("} finally {");
+				writer.addProfilerExit();
+				writer.addLine("}");
 				writer.addLine("}");
 				writer.currentBlock = null;
 				mainblock.getWordCompiler().setCurrentBlock(null);
