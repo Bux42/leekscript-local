@@ -221,6 +221,10 @@ public class ClassMethodBlock extends AbstractLeekBlock implements Annotatable {
 		return this.clazz;
 	}
 
+	public String getName() {
+		return token == null ? "<staticInit>" : token.getWord();
+	}
+
 	public List<Token> getParameters() {
 		return mParameters;
 	}

@@ -59,7 +59,7 @@ public class DoWhileBlock extends AbstractLeekBlock {
 		super.writeJavaCode(mainblock, writer, false);
 		writer.addCode("} while (");
 		if (writer.isOperationsEnabled()) {
-			writer.addCode("ops(");
+			writer.addCode(writer.profilerOperationStart(getLocation()));
 		}
 		// Prevent unreachable code error (aussi pour une condition constante après
 		// pliage — cf ConstantFolder)

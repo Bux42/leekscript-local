@@ -207,7 +207,7 @@ public class LeekVariableDeclarationInstruction extends LeekInstruction implemen
 					if (castHere) {
 						writer.addCode("(" + this.type.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
 					}
-					writer.addCode("ops(");
+					writer.addCode(writer.profilerOperationStart(getLocation()));
 				}
 				if (mValue == null) {
 					writer.addCode(this.type.getDefaultValue(writer, mainblock.getVersion()));

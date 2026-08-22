@@ -111,7 +111,7 @@ public class LeekReturnInstruction extends LeekInstruction {
 		} else {
 			var finalExpression = expression.trim();
 			if (finalExpression.getOperations() > 0) {
-				writer.addCode("ops(" + finalExpression.getOperations() + "); ");
+				writer.addCode(writer.profilerOperation(finalExpression.getOperations(), getLocation()) + "; ");
 			}
 			if (optional) {
 				// La conversion précède le test : vers un Array/Map/Set, toArray/toMap/toSet planteraient

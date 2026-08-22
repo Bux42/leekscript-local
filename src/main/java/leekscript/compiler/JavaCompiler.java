@@ -198,7 +198,7 @@ public class JavaCompiler {
 			if (cached != null) return cached;
 
 			long sig = signature(file);
-			if (options.useCache() && file.getTimestamp() > 0 && compiled.exists() && compiled.length() != 0 && readSignatureFile(sigFile) == sig) {
+			if (options.useCache() && file.getTimestamp() > 0 && compiled.exists() && compiled.length() != 0 && readSignatureFile(sigFile) == sig && isCurrentGeneratedCode(java)) {
 				try {
 					// ClassLoader éphémère par AI pour permettre le GC des classes ;
 					// ne pas le close, ça invaliderait la classe chargée.
@@ -341,6 +341,17 @@ public class JavaCompiler {
 			} catch (Exception e) {
 				throw new LeekScriptException(Error.CANNOT_LOAD_AI, e.getMessage());
 			}
+		}
+	}
+
+	private static boolean isCurrentGeneratedCode(File java) {
+		if (!java.exists()) {
+			return false;
+		}
+		try {
+			return java.nio.file.Files.readString(java.toPath()).contains("getLeekScriptGeneratedCodeVersion() { return 2; }");
+		} catch (IOException e) {
+			return false;
 		}
 	}
 }

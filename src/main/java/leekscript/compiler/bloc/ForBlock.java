@@ -96,7 +96,7 @@ public class ForBlock extends AbstractLeekBlock {
 		mInitialisation.writeJavaCode(mainblock, writer, false);
 
 		if (writer.isOperationsEnabled()) {
-			writer.addCode("ops(");
+			writer.addCode(writer.profilerOperationStart(getLocation()));
 		}
 		// Prevent unreachable code error (aussi pour une condition constante après
 		// pliage — cf ConstantFolder : `for (;false;)` serait rejeté par javac)
@@ -113,7 +113,7 @@ public class ForBlock extends AbstractLeekBlock {
 		writer.addCode("; ");
 		var incrementation = mIncrementation.trim();
 		if (writer.isOperationsEnabled()) {
-			writer.addCode("ops(");
+			writer.addCode(writer.profilerOperationStart(getLocation()));
 			mIncrementation.writeJavaCode(mainblock, writer, false);
 			writer.addCode(", " + mIncrementation.getOperations() + ")");
 		} else if (!(incrementation instanceof LeekFunctionCall call && call.isEliminable(mainblock))) {

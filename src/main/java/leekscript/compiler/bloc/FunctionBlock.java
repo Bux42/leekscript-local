@@ -297,6 +297,8 @@ public class FunctionBlock extends AbstractLeekBlock implements Annotatable {
 			}
 		}
 		writer.addLine(sb.toString(), getLocation());
+		writer.addProfilerEnter(getName(), getLocation());
+		writer.addLine("try {");
 
 		// Paramètres avec valeur par défaut (non passés en argument)
 		for (int i = paramCount; i < maxParameters; i++) {
@@ -331,6 +333,9 @@ public class FunctionBlock extends AbstractLeekBlock implements Annotatable {
 		if (mEndInstruction == 0) {
 			writer.addLine("return " + type.returnType().getDefaultValue(writer, mainblock.getVersion()) + ";");
 		}
+		writer.addLine("} finally {");
+		writer.addProfilerExit();
+		writer.addLine("}");
 		writer.addLine("}");
 	}
 

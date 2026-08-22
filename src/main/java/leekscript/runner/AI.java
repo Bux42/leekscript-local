@@ -86,6 +86,7 @@ public abstract class AI {
 	}
 
 	protected long mOperations = 0;
+	private OperationsProfiler operationsProfiler;
 	public final static int MAX_OPERATIONS = 20_000_000;
 	public long maxOperations = MAX_OPERATIONS;
 
@@ -441,6 +442,42 @@ public abstract class AI {
 		this.maxOperations = maxOperations;
 	}
 
+	public OperationsProfiler getOperationsProfiler() {
+		return operationsProfiler;
+	}
+
+	public void setOperationsProfiler(OperationsProfiler profiler) {
+		operationsProfiler = profiler;
+	}
+
+	public void profilerEnter(String name, String file, int line) {
+		if (operationsProfiler != null) {
+			operationsProfiler.enter(name, file, line);
+		}
+	}
+
+	public void profilerExit() {
+		if (operationsProfiler != null) {
+			operationsProfiler.exit();
+		}
+	}
+
+	public Object profilerLocation(String file, int line) {
+		if (operationsProfiler != null) {
+			operationsProfiler.location(file, line);
+		}
+		return null;
+	}
+
+	public void opsProfile(Object profilerLocation, int nb) throws LeekRunException {
+		ops(nb);
+	}
+
+	public <T> T opsProfile(Object profilerLocation, T x, int nb) throws LeekRunException {
+		ops(nb);
+		return x;
+	}
+
 	public AILog getLogs() {
 		return logs;
 	}
@@ -448,6 +485,9 @@ public abstract class AI {
 	public void ops(int nb) throws LeekRunException {
 		// System.out.println("ops " + nb);
 		mOperations += nb;
+		if (operationsProfiler != null) {
+			operationsProfiler.record(nb);
+		}
 		if (mOperations >= maxOperations) {
 			throw new LeekRunException(Error.TOO_MUCH_OPERATIONS);
 		}
@@ -486,6 +526,9 @@ public abstract class AI {
 
 	public void opsNoCheck(int nb) {
 		mOperations += nb;
+		if (operationsProfiler != null) {
+			operationsProfiler.record(nb);
+		}
 	}
 
 	public void resetCounter() {

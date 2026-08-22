@@ -70,7 +70,7 @@ public class LeekExpressionInstruction extends LeekInstruction {
 
 		// Wrap an expression with a function call to avoid 'error: not a statement' error
 		if (needsStatementWrapper(trimmed)) {
-			if (writer.isOperationsEnabled() && trimmed.getOperations() > 0) writer.addCode("ops(");
+			if (writer.isOperationsEnabled() && trimmed.getOperations() > 0) writer.addCode(writer.profilerOperationStart(getLocation()));
 			else if (!writer.lastInstruction) writer.addCode("nothing(");
 			var last = writer.lastInstruction;
 			writer.lastInstruction = false;
@@ -78,7 +78,7 @@ public class LeekExpressionInstruction extends LeekInstruction {
 			if (writer.isOperationsEnabled() && trimmed.getOperations() > 0) writer.addCode(", " + trimmed.getOperations() + ")");
 			else if (!last) writer.addCode(")");
 		} else {
-			if (writer.isOperationsEnabled() && trimmed.getOperations() > 0) writer.addCode("ops(");
+			if (writer.isOperationsEnabled() && trimmed.getOperations() > 0) writer.addCode(writer.profilerOperationStart(getLocation()));
 			trimmed.writeJavaCode(mainblock, writer, false);
 			if (writer.isOperationsEnabled() && trimmed.getOperations() > 0) writer.addCode(", " + trimmed.getOperations() + ")");
 		}

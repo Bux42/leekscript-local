@@ -376,6 +376,8 @@ public class MainLeekBlock extends AbstractLeekBlock {
 
 		// Static init
 		writer.addLine("public void staticInit() throws LeekRunException {");
+		writer.addProfilerEnter("staticInit", mAIName, 1);
+		writer.addLine("try {");
 
 		// Create classes static fields
 		for (var clazz : mUserClassesList) {
@@ -389,6 +391,9 @@ public class MainLeekBlock extends AbstractLeekBlock {
 			clazz.initializeStaticFields(this, writer);
 		}
 
+		writer.addLine("} finally {");
+		writer.addProfilerExit();
+		writer.addLine("}");
 		writer.addLine("}"); // Fin staticInit
 
 		// Variables globales
@@ -413,6 +418,8 @@ public class MainLeekBlock extends AbstractLeekBlock {
 		}
 
 		writer.addLine("public Object runIA(Session session) throws LeekRunException {");
+		writer.addProfilerEnter("runIA", mAIName, 1);
+		writer.addLine("try {");
 
 		for (var clazz : mUserClassesList) {
 			if (clazz.internal) continue;
@@ -438,6 +445,9 @@ public class MainLeekBlock extends AbstractLeekBlock {
 
 		super.writeJavaCode(this, writer, false);
 
+		writer.addLine("} finally {");
+		writer.addProfilerExit();
+		writer.addLine("}");
 		writer.addLine("}");
 
 		writer.writeErrorFunction(mCompiler, mAIName);

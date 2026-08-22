@@ -37,7 +37,7 @@ public class WhileBlock extends AbstractLeekBlock {
 	@Override
 	public void writeJavaCode(MainLeekBlock mainblock, JavaWriter writer, boolean parenthesis) {
 		// writer.addCounter(1);
-		writer.addCode("while (ops(");
+		writer.addCode("while (" + writer.profilerOperationStart(getLocation()));
 		// Prevent unreachable code error. Une condition constante après pliage
 		// (champ static final, !/&&/|| de littéraux — cf ConstantFolder) doit être
 		// enveloppée comme un littéral : `while (false)` serait rejeté par javac.

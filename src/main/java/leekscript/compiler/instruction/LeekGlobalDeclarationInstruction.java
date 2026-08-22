@@ -70,7 +70,7 @@ public class LeekGlobalDeclarationInstruction extends LeekInstruction implements
 				if (variable.getType() != Type.ANY) {
 					writer.addCode("(" + variable.getType().getJavaPrimitiveName(mainblock.getVersion()) + ") ");
 				}
-				if (mValue.getOperations() > 0) writer.addCode("ops(");
+				if (mValue.getOperations() > 0) writer.addCode(writer.profilerOperationStart(getLocation()));
 				writer.compileConvert(mainblock, 0, mValue, variable.getType(), false);
 				if (mValue.getOperations() > 0) writer.addCode(", " + mValue.getOperations() + ")");
 			} else {
@@ -85,7 +85,7 @@ public class LeekGlobalDeclarationInstruction extends LeekInstruction implements
 			writer.addCode(", " + (mValue != null ? mValue.getOperations() : 0) + ")");
 		}
 		writer.addCode("; g_init_" + variableToken.getWord() + " = true;");
-		if (mainblock.getWordCompiler().getVersion() >= 2) writer.addCode(" ops(1);");
+		if (mainblock.getWordCompiler().getVersion() >= 2) writer.addCode(" " + writer.profilerOperation(1, getLocation()) + ";");
 		writer.addLine(" }", getLocation());
 	}
 

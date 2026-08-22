@@ -147,7 +147,7 @@ public class LeekTernaire extends LeekExpression {
 	private void writeBranch(MainLeekBlock mainblock, JavaWriter writer, Expression branch) {
 		boolean counted = mExpression1.operations != mExpression2.operations && branch.operations > 0;
 		if (counted) {
-			writer.addCode("ops(");
+			writer.addCode(writer.profilerOperationStart(getLocation()));
 			if (JavaWriter.keepsBoxed(branch, type)) {
 				writer.addCode("(" + type.getJavaPrimitiveName(mainblock.getVersion()) + ") ");
 			}
