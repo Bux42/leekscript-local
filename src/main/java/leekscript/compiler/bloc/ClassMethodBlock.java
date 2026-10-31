@@ -77,7 +77,7 @@ public class ClassMethodBlock extends AbstractLeekBlock implements Annotatable {
 	}
 
 	public String getName() {
-		return token.getWord();
+		return token == null ? "<staticInit>" : token.getWord();
 	}
 
 	public int getParameterIndex(String name) {
@@ -304,10 +304,6 @@ public class ClassMethodBlock extends AbstractLeekBlock implements Annotatable {
 
 	public ClassDeclarationInstruction getClassDeclaration() {
 		return this.clazz;
-	}
-
-	public String getName() {
-		return token == null ? "<staticInit>" : token.getWord();
 	}
 
 	public List<Token> getParameters() {
